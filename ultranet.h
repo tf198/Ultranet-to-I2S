@@ -29,16 +29,16 @@
 #define VERSION "1.2"
 
 // conditional compilation switches for hardware options
-// #define DEBUG                    // enable debug code DEBUG DEBUG DEBUG
-#define WS2812                      // Our board has a ws2812 programmable LED
+#define DEBUG                    // enable debug code DEBUG DEBUG DEBUG
+//#define WS2812                      // Our board has a ws2812 programmable LED
 #define MCLK                        // Enable MCLK clock for I2S devices
 
-                                    // 172000 for 7 slots per bit incoming Ultranet stream
-#define CLOCKSPEED  196500          // 196500 for 8 slots per bit incoming Ultranet stream
-#define AUDIV 8                     // Audio divider for pio timing (7 for 172MHz, 8 for 196.5MHz)
+                                    // 172000 for 7 slots per bit incoming Ultranet stream (148000 at 6)
+#define CLOCKSPEED  172000          // 196500 for 8 slots per bit incoming Ultranet stream
+#define AUDIV 7                     // Audio divider for pio timing (7 for 172MHz, 8 for 196.5MHz)
 // Ultranet input and MCLK state machines use pio0
-#define UNETL_PIN 0                 // ultranet low stream (1-8) input pin
-#define UNETH_PIN 1                 // ultranet high stream (9-16) input pin
+#define UNETL_PIN 2                 // ultranet low stream (1-8) input pin
+#define UNETH_PIN 3                 // ultranet high stream (9-16) input pin
 #define UNET_PIN UNETL_PIN          // ultranet default input pin
 #define UNET_PIO pio0               // PIO module to use for Ultranet input
 #define UNET_SM 0                   // state machine to use for Ultranet input
@@ -49,10 +49,10 @@
 #endif // MCLK
 // I2S outputs use second pio (pio1), four I2S outputs, 3 pins each
 #define I2S_PIO pio1                // PIO 1 is dedicated to I2S outputs (all 4 SMs)
-#define I2S1_PINS 2                 // base for I2S output pins (3 pins starting point)
-#define I2S2_PINS 5                 // base for I2S output pins (3 pins starting point)
+#define I2S1_PINS 6                 // base for I2S output pins (3 pins starting point)
+#define I2S2_PINS 9                 // base for I2S output pins (3 pins starting point)
 #define I2S3_PINS 8                 // base for I2S output pins (3 pins starting point)
-#define I2S4_PINS 17                // base for I2S output pins (3 pins starting point)
+#define I2S4_PINS 18                // base for I2S output pins (3 pins starting point)
 // Selector binary switch (3 pole)
 #define SELECTOR_SW_BASE 11         // base pin (switch is 3-pin, base+2) switches to ground
 #define SW_COMM_LOW                 // switch common pin(s) are connected to 0v
@@ -72,10 +72,10 @@
     #define BLACK 0                 // turn off all LEDs in module
     #define LED_ERR_COLOUR RED      // set colour for LED frame error indiication
     #define LED_STREAM_COLOUR BLUE  // set colour for LED stream indication
-    #define LED_STREAM_MASK 0xFFFF00FF  // Mask blue bits, for stream detect LED
     #define put_pixel(pixel) pio_sm_put(WS2812_PIO, WS2812_SM, (pixel))
-#endif // WS2812             
-// #define PICO_LED 25                 // Uncomment to use normal LED on standard PICO boards
+#endif // WS2812
+#define LED_STREAM_MASK 0xFFFF00FF  // Mask blue bits, for stream detect LED           
+#define PICO_LED                    // Uncomment to use normal LED on standard PICO boards
 #define STREAM_LED_RESET 200000     // Period in us to reset stream indicator LED
 // for PWM analog audio outputs
 #define PIN_PWM_1A 14               // A channel of PWM slice (left audio)

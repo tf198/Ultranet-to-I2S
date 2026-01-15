@@ -23,7 +23,7 @@ if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 # ====================================================================================
-set(PICO_BOARD pico CACHE STRING "Board type")
+set(PICO_BOARD pico2_w CACHE STRING "Board type")
 
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
@@ -35,7 +35,7 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name
 
-add_executable(Ultranet Ultranet.c core1.c ultranet.h)
+add_executable(Ultranet ultranet.c led.c core1.c ultranet.h)
 
 pico_set_program_name(Ultranet "Ultranet")
 # program version string is now defined in main source file
@@ -63,6 +63,7 @@ target_link_libraries(Ultranet
         hardware_pwm
         hardware_clocks
         pico_multicore
+        pico_cyw43_arch_none
         )
 
 pico_add_extra_outputs(Ultranet)

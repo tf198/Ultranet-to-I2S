@@ -31,6 +31,7 @@
 */
 
 #include "ultranet.h"
+#include "led.h"
 
 volatile uint32_t samples[8];   // array of samples read from Ultranet stream
 
@@ -47,15 +48,16 @@ void ultranet_gpio_init(void)
 #endif // SW_COMM_LOW
     }
 #ifdef PICO_LED
-    gpio_init(PICO_LED);                                    // set LED pin as GPIO 
-    gpio_set_dir(PICO_LED, GPIO_OUT);                       // set LED pin as output
+    pico_led_init();
 #endif // PICO_LED
 }
 
 // state machine init functions (used to be defined in <prog>.pio file)
 void ultranet_pio_init(PIO pio, uint sm, uint pin)
 {
-    gpio_set_dir(pin, false);                               // set ultranet pin as input
+    printf("GPIO Pin: %d\n", pin);
+    gpio_init(pin);
+    gpio_set_dir(pin, GPIO_IN);                               // set ultranet pin as input
     gpio_set_pulls(pin, true, false);                       // set pullup on ultranet pin
     uint offset = pio_add_program(pio, &ultranet_program);  // load code into pio mem
     pio_sm_config c = ultranet_program_get_default_config(offset);  // get default structure
@@ -66,9 +68,8 @@ void ultranet_pio_init(PIO pio, uint sm, uint pin)
     pio_sm_set_enabled(pio, sm, true);                      // start state machine running
 }
 
-
-#ifdef WS2812
-volatile uint32_t led_state;                                // current value last sent to WS2812 LED
+volatile uint32_t led_state = 0xFFFFFFFF;   
+#ifdef WS2812                           
 void ws2812_pio_init(PIO pio, uint sm, uint pin)            // Set up PIO SM for ws2812 LED module
 {
     uint offset = pio_add_program(pio, &ws2812_program);    // PIO program shares code space with UNET and MCLK
@@ -102,10 +103,7 @@ int64_t alarm_callback(alarm_id_t id, __unused void *repeatptr)
     put_pixel(led_state);                                   // Output current sate of led_state flag to LED
 #endif // WS2812
 #ifdef PICO_LED
-    if((led_state & ~LED_STREAM_MASK) > 0)                  // led_state has been set by Ultranet stream code
-        gpio_put(PICO_LED, 1);                              // turn on LED when stream is detected
-    else
-        gpio_put(PICO_LED, 0);                              // or turn off if no stream detected
+    pico_set_led((led_state & ~LED_STREAM_MASK) > 0);       // led_state has been set by Ultranet stream code
 #endif // PICO_LED
     led_state = led_state & LED_STREAM_MASK;                // Zero out the stream LED colour bits
     return *(const uint32_t*)repeatptr;                     // return value is repeat time
@@ -128,7 +126,7 @@ void set_binary_info(void)
     bi_decl(bi_1pin_with_name(WS2812_PIN, "WS2812 NeoPixel LED"));
 #endif // WS2812
 #ifdef PICO_LED
-    bi_decl(bi_1pin_with_name(PICO_LED, "PICO board normal LED"));
+    bi_decl(bi_1pin_with_name(1, "PICO board normal LED enabled"));
 #endif // PICO_LED
     set_core1_info();                                       // info for pins used by core1
 }
@@ -152,9 +150,15 @@ int main()
     const uint64_t repeat_us = STREAM_LED_RESET;            // Repeat time period for alarm to clear Ultranet stream LED
     uint selector;                                          // Selector switch state
  
+uint dropped = 0;
+uint synced = 0;
+
     set_binary_info();                                      // info for querying by picotool
     stdio_init_all();                                       // initialise SDK libraries and interfaces
-    set_sys_clock_khz(CLOCKSPEED,false);                    // set cpu clock frequency
+    if (!set_sys_clock_khz(CLOCKSPEED,false)) {
+        printf("Failed to set clock\n");
+        return 1;
+    };                    // set cpu clock frequency
 
 #ifdef DEBUG
     sleep_ms(5000);                                         // allow time for USB serial to connect
@@ -171,9 +175,7 @@ int main()
     add_alarm_in_us(repeat_us, alarm_callback, (void*)&repeat_us, false);  // start timer for stream LED blanking
 
     selector = get_selector();                              // read selector switch once at boot time
-#ifdef DEBUG
     printf("Selector = %d\n", selector);
-#endif // DEBUG
 
     if(selector & 0b100)                                    // Most significant switch bit selects Ultranet input stream pin
         ultranet_pio_init(UNET_PIO, UNET_SM, UNETH_PIN);    // initialise and start ultranet state machine
@@ -185,56 +187,15 @@ int main()
     sleep_ms(100);                                          // wait for core1 to start
 #ifdef DEBUG
     sleep_ms(5000);
-    puts("FINISHED setting everything up\n");
-#ifdef WS2812
-    while(true)
-    {
-        int inc = getchar();
-        switch(inc)
-        {
-            case 'r':
-            case 'R':
-                pio_sm_put(WS2812_PIO, WS2812_SM, RED);
-                puts("RED");
-                break;
-            case 'g':
-            case 'G':
-                pio_sm_put(WS2812_PIO, WS2812_SM, GREEN);
-                puts("GREEN");
-                break;
-            case 'b':
-            case 'B':
-                pio_sm_put(WS2812_PIO, WS2812_SM, BLUE);
-                puts("BLUE");
-                break;
-            case 'm':
-            case 'M':
-                pio_sm_put(WS2812_PIO, WS2812_SM, MAGENTA);
-                puts("MAGENTA");
-                break;
-            case 'c':
-            case 'C':
-                pio_sm_put(WS2812_PIO, WS2812_SM, CYAN);
-                puts("CYAN");
-                break;
-            case 'y':
-            case 'Y':
-                pio_sm_put(WS2812_PIO, WS2812_SM, YELLOW);
-                puts("YELLOW");
-                break;
-            case 'w':
-            case 'W':
-                pio_sm_put(WS2812_PIO, WS2812_SM, WHITE);
-                puts("WHITE");
-                break;
-        }
-#endif // WS2812
-    }
 #endif // DEBUG
+    puts("FINISHED setting everything up\n");
 
     // sync with ultranet frames initially, so we don't turn LED on at start 
-    for(int count=0; count<200; count++)                    // discard the first 200 Ultranet frames after startup
+    for(int count=0; count<200; count++)                  // discard the first 200 Ultranet frames after startup
+    {
         sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);    // get frame word from Ultranet FIFO
+    }
+    puts("Synchronising...");
 
     // now sync to start frame (starting with last sample read from FIFO)
     while((sample & 0x3F) != 0x0000000B && (sample & 0x3F) != 0x0000000F)
@@ -242,11 +203,16 @@ int main()
         sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);    // get next sample from Ultranet FIFO
     }                                                       // "sample" now contains start frame
 
+    printf("Synchronised: %08x\n", sample);
     while (true)
     {
         // synchronise with first subframe in Ultranet frame
         if((sample & 0x3F) == 0x0000000B || (sample & 0x3F) == 0x0000000F)
         {
+#ifdef DEBUG
+            //printf("+");
+#endif // DEBUG
+            synced++;
             // if we get here, sample contains the first subframe in Ultranet frame
             samples[0] = (sample << 4) & 0xFFFFFC00;        // move 22 bits of audio into MSBs
 
@@ -271,12 +237,26 @@ int main()
             sample = pio_sm_get_blocking(UNET_PIO,UNET_SM); // get next sample from Ultranet FIFO
             samples[7] = (sample << 4) & 0xFFFFFC00;        // move 22 bits of audio into MSBs
 
+#ifdef WS2812
             led_state = led_state | LED_STREAM_COLOUR;      // set selected LED on, preserving other colours
+#else
+            led_state = 0xFFFFFFFF;
+#endif // WS2812
         }
         else    // if we get here, we looked for start frame in the right place, but didn't find it
         {
+#ifdef WS2812
             led_state = led_state | LED_ERR_COLOUR;         // turn on RED, preserving other colours
+#else
+            led_state = 0;
+            
+#endif // WS2812
+#ifdef DEBUG
+            //printf("-");
+#endif
+            dropped++;
         }
         sample = pio_sm_get_blocking(UNET_PIO,UNET_SM);     // get next sample from Ultranet FIFO
+        if(dropped % 1000000 == 0) printf("Synced: %d, dropped: %d\n", synced, dropped);
     }
 }
