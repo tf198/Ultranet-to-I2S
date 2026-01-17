@@ -33,15 +33,15 @@
 //#define WS2812                      // Our board has a ws2812 programmable LED
 #define MCLK                        // Enable MCLK clock for I2S devices
 
-                                    // 172000 for 7 slots per bit incoming Ultranet stream (148000 at 6)
-#define CLOCKSPEED  172000          // 196500 for 8 slots per bit incoming Ultranet stream
-#define AUDIV 7                     // Audio divider for pio timing (7 for 172MHz, 8 for 196.5MHz)
+#define CLOCKSPEED ultranet_cs     // Required clockspeed (from pio)
+#define AUDIV ultranet_cy           // Audio divider for pio timing (from pio))
 // Ultranet input and MCLK state machines use pio0
 #define UNETL_PIN 2                 // ultranet low stream (1-8) input pin
 #define UNETH_PIN 3                 // ultranet high stream (9-16) input pin
 #define UNET_PIN UNETL_PIN          // ultranet default input pin
 #define UNET_PIO pio0               // PIO module to use for Ultranet input
 #define UNET_SM 0                   // state machine to use for Ultranet input
+#define UNET_DISCARD 1000000        // discard this many samples to sync
 #ifdef MCLK                         // if we want an I2S MCLK clock
     #define MCLK_PIN 24             // I2S Master Clock Pin (if used)
     #define MCLK_PIO pio0           // state machine for I2S master clock

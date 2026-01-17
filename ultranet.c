@@ -33,6 +33,10 @@
 #include "ultranet.h"
 #include "led.h"
 
+static const uint32_t SYNC_B = 0b1111;
+static const uint32_t SYNC_M = 0b1011;
+static const uint32_t SYNC_W = 0b0111;
+
 volatile uint32_t samples[8];   // array of samples read from Ultranet stream
 
 void ultranet_gpio_init(void)
@@ -63,6 +67,7 @@ void ultranet_pio_init(PIO pio, uint sm, uint pin)
     pio_sm_config c = ultranet_program_get_default_config(offset);  // get default structure
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);          // configure 8 depth input fifo
     sm_config_set_in_pins (&c, pin);                        // input pin range base
+    sm_config_set_in_shift(&c, true, false, 32);            // shift_right, no autopush, 32bit
     pio_sm_init(pio, sm, offset, &c);                       // apply structure to state machine
     pio_sm_set_jmp_pin(pio, UNET_SM, pin);                  // specify pin for jmp instructions
     pio_sm_set_enabled(pio, sm, true);                      // start state machine running
@@ -131,6 +136,110 @@ void set_binary_info(void)
     set_core1_info();                                       // info for pins used by core1
 }
 
+int popcount(uint32_t i)
+{
+     i = i - ((i >> 1) & 0x55555555);        // add pairs of bits
+     i = (i & 0x33333333) + ((i >> 2) & 0x33333333);  // quads
+     i = (i + (i >> 4)) & 0x0F0F0F0F;        // groups of 8
+     i *= 0x01010101;                        // horizontal sum of bytes
+     return  i >> 24;               // return just that top byte (after truncating to 32-bit even when int is wider than uint32_t)
+}
+
+char sample_status(uint32_t sample) {
+    
+
+    if (sample & 1 != 1) return ' ';
+
+    uint8_t bitcount = popcount(sample & 0x0ffffffe);
+    uint8_t parity = (bitcount + 1) & 1;
+
+    if (sample >> 31 != parity) return '-'; 
+
+    switch(sample & 0x0f) {
+        case SYNC_B:
+            return 'B';
+        case SYNC_M:
+            return 'M';
+        case SYNC_W:
+            return 'W';
+        default:
+            return 'S';
+    }
+}
+
+void print_sample(uint32_t sample) {
+
+    char status = sample_status(sample);
+    printf("%08x %c ", sample, status);
+
+    for (int i = sizeof(uint32_t) * 8 - 1; i >= 0; i--) {
+        printf("%d", (sample >> i) & 1);
+    }
+    printf("\n");
+}
+
+void analyse_samples() {
+    volatile uint32_t sample;
+    uint64_t ts;
+    char c;
+
+    int i = 0;
+    while(false) {
+        sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);
+        printf("%08x ", sample);
+        if (i++ % 8 == 0) printf("\n");
+    }
+
+    uint32_t total, valid, malformed, parity_failed, sync_m, sync_w;
+    total = valid = malformed = parity_failed = sync_m = sync_w = 0;
+
+    // dump some samples so we can see what we are dealing with
+    while (valid < 100) {
+        sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);
+        if(sample & 1) {
+            print_sample(sample);
+            valid++;
+        }
+    }
+
+    valid = 0;
+    
+    while(true) {
+        sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);
+        total++;
+        c = sample_status(sample);
+        //printf("%c", c);
+        switch(c) {
+            case 'S':
+                valid++;
+                break;
+            case 'B':
+                valid++;
+                break;
+            case 'M':
+                valid++;
+                sync_m++;
+                break;
+            case 'W':
+                valid++;
+                sync_w++;
+                break;
+            case '-':
+                parity_failed++;
+                break;
+            default:
+                malformed++;
+            }
+
+        
+        ts = time_us_64();
+        if (ts % 1000000 < 10 && total > 1000) {
+            printf("%llus: %lu total, %lu valid (M: %lu, W: %lu, P: %lu, X: %lu) %d%%\n", ts/1000000, total, valid, sync_m, sync_w, parity_failed, malformed, valid*100/total);
+            total = valid = malformed = sync_m = sync_w = parity_failed = 0;
+        }
+    }
+}
+
 
 // read selector switch and return uint with switch positions in the 3 LSBs
 uint get_selector(void)
@@ -150,15 +259,15 @@ int main()
     const uint64_t repeat_us = STREAM_LED_RESET;            // Repeat time period for alarm to clear Ultranet stream LED
     uint selector;                                          // Selector switch state
  
-uint dropped = 0;
-uint synced = 0;
+    int32_t dropped = 0;
+    int32_t synced = 0;
 
-    set_binary_info();                                      // info for querying by picotool
-    stdio_init_all();                                       // initialise SDK libraries and interfaces
-    if (!set_sys_clock_khz(CLOCKSPEED,false)) {
+    set_binary_info();                                      // info for querying by picotool                                    // initialise SDK libraries and interfaces
+    if (!set_sys_clock_khz(CLOCKSPEED,true)) {
         printf("Failed to set clock\n");
         return 1;
     };                    // set cpu clock frequency
+    stdio_init_all();   
 
 #ifdef DEBUG
     sleep_ms(5000);                                         // allow time for USB serial to connect
@@ -170,6 +279,7 @@ uint synced = 0;
     ws2812_pio_init(WS2812_PIO, WS2812_SM, WS2812_PIN);     // ws2812 output pio state machine
 #endif // WS2812
 
+    printf("Clock: %dkhz (%d,%d)\n", clock_get_hz(clk_sys)/1000, ultranet_cy, ultranet_mp);
     ultranet_gpio_init();                                   // initialise required GPIO pins
 
     add_alarm_in_us(repeat_us, alarm_callback, (void*)&repeat_us, false);  // start timer for stream LED blanking
@@ -190,15 +300,16 @@ uint synced = 0;
 #endif // DEBUG
     puts("FINISHED setting everything up\n");
 
-    // sync with ultranet frames initially, so we don't turn LED on at start 
+    // sync with ultranet frames initially, so we don't turn LED on at start
     for(int count=0; count<200; count++)                  // discard the first 200 Ultranet frames after startup
     {
         sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);    // get frame word from Ultranet FIFO
     }
-    puts("Synchronising...");
+
+    analyse_samples();
 
     // now sync to start frame (starting with last sample read from FIFO)
-    while((sample & 0x3F) != 0x0000000B && (sample & 0x3F) != 0x0000000F)
+    while((sample & 0x0F) != 0x0000000B && (sample & 0x0F) != 0x0000000F)
     {
         sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);    // get next sample from Ultranet FIFO
     }                                                       // "sample" now contains start frame
@@ -207,12 +318,12 @@ uint synced = 0;
     while (true)
     {
         // synchronise with first subframe in Ultranet frame
-        if((sample & 0x3F) == 0x0000000B || (sample & 0x3F) == 0x0000000F)
+        if((sample & 0x0F) == 0x0000000B || (sample & 0x0F) == 0x0000000F)
         {
 #ifdef DEBUG
             //printf("+");
 #endif // DEBUG
-            synced++;
+            synced+=8;
             // if we get here, sample contains the first subframe in Ultranet frame
             samples[0] = (sample << 4) & 0xFFFFFC00;        // move 22 bits of audio into MSBs
 
@@ -257,6 +368,6 @@ uint synced = 0;
             dropped++;
         }
         sample = pio_sm_get_blocking(UNET_PIO,UNET_SM);     // get next sample from Ultranet FIFO
-        if(dropped % 1000000 == 0) printf("Synced: %d, dropped: %d\n", synced, dropped);
+        if(synced % 1000000 == 0) printf("Synced: %d, dropped: %d (%d%%)\n", synced, dropped, dropped*1000/(synced+dropped));
     }
 }
