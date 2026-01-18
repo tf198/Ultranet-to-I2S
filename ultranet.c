@@ -154,7 +154,7 @@ int8_t sample_channel(uint32_t sample) {
     // check parity bit
     uint8_t bitcount = popcount(sample & 0x0ffffffe);
     uint8_t parity = (bitcount + 1) & 1;
-    if (sample >> 31 != parity) return -1; 
+    if (sample >> 31 != parity) return -2; 
 
     channel = ((sample >> 4) & 0b11) * 2;
     switch (sample & 0b1111) {
@@ -165,7 +165,7 @@ int8_t sample_channel(uint32_t sample) {
         case SYNC_W: // right or B channel
             return channel+1;
         default:
-            return -1;
+            return -3;
     }
 }
 
@@ -239,9 +239,10 @@ int main()
     volatile uint32_t sample;                               // temp store for sample read from Ultranet stream
     const uint64_t repeat_us = STREAM_LED_RESET;            // Repeat time period for alarm to clear Ultranet stream LED
     uint selector;                                          // Selector switch state
- 
+    
     int32_t dropped = 0;
-    int32_t synced = 0;
+    int32_t total = 0;
+    int8_t channel;
 
     set_binary_info();                                      // info for querying by picotool                                    // initialise SDK libraries and interfaces
     if (!set_sys_clock_khz(CLOCKSPEED,true)) {
@@ -276,79 +277,33 @@ int main()
     multicore_launch_core1(core1_entry);                    // start core 1
 
     sleep_ms(100);                                          // wait for core1 to start
-#ifdef DEBUG
-    sleep_ms(5000);
-#endif // DEBUG
     puts("FINISHED setting everything up\n");
 
-    // sync with ultranet frames initially, so we don't turn LED on at start
-    for(int count=0; count<200; count++)                  // discard the first 200 Ultranet frames after startup
-    {
-        sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);    // get frame word from Ultranet FIFO
-    }
+    // discard first 200 samples
+    for(int count=0; count<200; count++)  sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);    // get frame word from Ultranet FIFO
 
+#ifdef DEBUG
     analyse_samples();
+#endif
 
-    // now sync to start frame (starting with last sample read from FIFO)
-    while((sample & 0x0F) != 0x0000000B && (sample & 0x0F) != 0x0000000F)
-    {
-        sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);    // get next sample from Ultranet FIFO
-    }                                                       // "sample" now contains start frame
-
-    printf("Synchronised: %08x\n", sample);
     while (true)
     {
-        // synchronise with first subframe in Ultranet frame
-        if((sample & 0x0F) == 0x0000000B || (sample & 0x0F) == 0x0000000F)
-        {
-#ifdef DEBUG
-            //printf("+");
-#endif // DEBUG
-            synced+=8;
-            // if we get here, sample contains the first subframe in Ultranet frame
-            samples[0] = (sample << 4) & 0xFFFFFC00;        // move 22 bits of audio into MSBs
-
-            sample = pio_sm_get_blocking(UNET_PIO,UNET_SM); // get next sample from Ultranet FIFO
-            samples[1] = (sample << 4) & 0xFFFFFC00;        // move 22 bits of audio into MSBs
-
-            sample = pio_sm_get_blocking(UNET_PIO,UNET_SM); // get next sample from Ultranet FIFO
-            samples[2] = (sample << 4) & 0xFFFFFC00;        // move 22 bits of audio into MSBs
-
-            sample = pio_sm_get_blocking(UNET_PIO,UNET_SM); // get next sample from Ultranet FIFO
-            samples[3] = (sample << 4) & 0xFFFFFC00;        // move 22 bits of audio into MSBs
-
-            sample = pio_sm_get_blocking(UNET_PIO,UNET_SM); // get next sample from Ultranet FIFO
-            samples[4] = (sample << 4) & 0xFFFFFC00;        // move 22 bits of audio into MSBs
-
-            sample = pio_sm_get_blocking(UNET_PIO,UNET_SM); // get next sample from Ultranet FIFO
-            samples[5] = (sample << 4) & 0xFFFFFC00;        // move 22 bits of audio into MSBs
-
-            sample = pio_sm_get_blocking(UNET_PIO,UNET_SM); // get next sample from Ultranet FIFO
-            samples[6] = (sample << 4) & 0xFFFFFC00;        // move 22 bits of audio into MSBs
-
-            sample = pio_sm_get_blocking(UNET_PIO,UNET_SM); // get next sample from Ultranet FIFO
-            samples[7] = (sample << 4) & 0xFFFFFC00;        // move 22 bits of audio into MSBs
-
-#ifdef WS2812
-            led_state = led_state | LED_STREAM_COLOUR;      // set selected LED on, preserving other colours
-#else
-            led_state = 0xFFFFFFFF;
-#endif // WS2812
-        }
-        else    // if we get here, we looked for start frame in the right place, but didn't find it
-        {
-#ifdef WS2812
-            led_state = led_state | LED_ERR_COLOUR;         // turn on RED, preserving other colours
-#else
-            led_state = 0;
-            
-#endif // WS2812
-#ifdef DEBUG
-            //printf("-");
-#endif
+        // get next ultranet frame
+        sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);
+        channel = sample_channel(sample);
+        total++;
+        if (channel < 0) {
             dropped++;
+            led_state = 0x0;
+        } else {
+            // move 22 bits of audio into MSBs
+            samples[channel] = (sample << 4) & 0xFFFFFC00;
+            led_state = 0xFFFFFFFF;
         }
-        sample = pio_sm_get_blocking(UNET_PIO,UNET_SM);     // get next sample from Ultranet FIFO
-        if(synced % 1000000 == 0) printf("Synced: %d, dropped: %d (%d%%)\n", synced, dropped, dropped*1000/(synced+dropped));
+        
+        if(total % 5000000 == 0) {
+            printf("Dropped: %lu/%lu [%lu%%]\n", dropped, total, dropped*100/total);
+            dropped = total = 0;
+        }
     }
 }

@@ -29,8 +29,8 @@
 #define VERSION "1.2"
 
 // conditional compilation switches for hardware options
-#define DEBUG                    // enable debug code DEBUG DEBUG DEBUG
-//#define WS2812                      // Our board has a ws2812 programmable LED
+// #define DEBUG                    // enable debug code DEBUG DEBUG DEBUG
+// #define WS2812                      // Our board has a ws2812 programmable LED
 #define MCLK                        // Enable MCLK clock for I2S devices
 
 #define CLOCKSPEED ultranet_cs     // Required clockspeed (from pio)
