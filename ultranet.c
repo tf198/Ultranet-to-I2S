@@ -145,32 +145,34 @@ int popcount(uint32_t i)
      return  i >> 24;               // return just that top byte (after truncating to 32-bit even when int is wider than uint32_t)
 }
 
-char sample_status(uint32_t sample) {
-    
+int8_t sample_channel(uint32_t sample) {
+    int8_t channel = 0;
 
-    if (sample & 1 != 1) return ' ';
+    // check if pio completely filled the buffer
+    if (sample & 1 != 1) return -1;
 
+    // check parity bit
     uint8_t bitcount = popcount(sample & 0x0ffffffe);
     uint8_t parity = (bitcount + 1) & 1;
+    if (sample >> 31 != parity) return -1; 
 
-    if (sample >> 31 != parity) return '-'; 
-
-    switch(sample & 0x0f) {
+    channel = ((sample >> 4) & 0b11) * 2;
+    switch (sample & 0b1111) {
         case SYNC_B:
-            return 'B';
-        case SYNC_M:
-            return 'M';
-        case SYNC_W:
-            return 'W';
+            return -1; // Ultranet doesn't use SYNC_B
+        case SYNC_M: // left or A channel
+            return channel;
+        case SYNC_W: // right or B channel
+            return channel+1;
         default:
-            return 'S';
+            return -1;
     }
 }
 
 void print_sample(uint32_t sample) {
 
-    char status = sample_status(sample);
-    printf("%08x %c ", sample, status);
+    int8_t status = sample_channel(sample);
+    printf("%08x %d ", sample, status);
 
     for (int i = sizeof(uint32_t) * 8 - 1; i >= 0; i--) {
         printf("%d", (sample >> i) & 1);
@@ -181,61 +183,40 @@ void print_sample(uint32_t sample) {
 void analyse_samples() {
     volatile uint32_t sample;
     uint64_t ts;
-    char c;
-
-    int i = 0;
-    while(false) {
-        sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);
-        printf("%08x ", sample);
-        if (i++ % 8 == 0) printf("\n");
-    }
-
-    uint32_t total, valid, malformed, parity_failed, sync_m, sync_w;
-    total = valid = malformed = parity_failed = sync_m = sync_w = 0;
+    int8_t c;
+    uint32_t channels[8];
+    uint32_t invalid = 0;
+    uint32_t total = 0;
 
     // dump some samples so we can see what we are dealing with
-    while (valid < 100) {
+    for (int i=0; i<200; i++) {
         sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);
-        if(sample & 1) {
-            print_sample(sample);
-            valid++;
-        }
+        print_sample(sample);
     }
-
-    valid = 0;
     
+
+    for (int i=0; i<8; i++) channels[i] = 0;
+
+    ts = time_us_64();
     while(true) {
         sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);
+        c = sample_channel(sample);
         total++;
-        c = sample_status(sample);
-        //printf("%c", c);
-        switch(c) {
-            case 'S':
-                valid++;
-                break;
-            case 'B':
-                valid++;
-                break;
-            case 'M':
-                valid++;
-                sync_m++;
-                break;
-            case 'W':
-                valid++;
-                sync_w++;
-                break;
-            case '-':
-                parity_failed++;
-                break;
-            default:
-                malformed++;
-            }
+        if (c < 0) {
+            invalid++;
+        } else {
+            channels[c]++;
+        }
 
         
-        ts = time_us_64();
-        if (ts % 1000000 < 10 && total > 1000) {
-            printf("%llus: %lu total, %lu valid (M: %lu, W: %lu, P: %lu, X: %lu) %d%%\n", ts/1000000, total, valid, sync_m, sync_w, parity_failed, malformed, valid*100/total);
-            total = valid = malformed = sync_m = sync_w = parity_failed = 0;
+        if (time_us_64() - ts > 1000000) {
+            for (int i=0; i<8; i++) {
+                printf("%d: %6lu ", i, channels[i]);
+                channels[i] = 0;
+            }
+            printf("X: %6lu/%7lu (%lu%%)\n", invalid, total, invalid*100/total);
+            invalid = total = 0;
+            ts = time_us_64();
         }
     }
 }
