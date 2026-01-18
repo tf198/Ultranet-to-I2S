@@ -60,7 +60,7 @@ void ultranet_gpio_init(void)
 void ultranet_pio_init(PIO pio, uint sm, uint pin)
 {
     printf("GPIO Pin: %d\n", pin);
-    gpio_init(pin);
+    //gpio_init(pin);
     gpio_set_dir(pin, GPIO_IN);                               // set ultranet pin as input
     gpio_set_pulls(pin, true, false);                       // set pullup on ultranet pin
     uint offset = pio_add_program(pio, &ultranet_program);  // load code into pio mem
@@ -69,6 +69,7 @@ void ultranet_pio_init(PIO pio, uint sm, uint pin)
     sm_config_set_in_pins (&c, pin);                        // input pin range base
     sm_config_set_in_shift(&c, true, false, 32);            // shift_right, no autopush, 32bit
     pio_sm_init(pio, sm, offset, &c);                       // apply structure to state machine
+    pio_gpio_init(pio, pin);  
     pio_sm_set_jmp_pin(pio, UNET_SM, pin);                  // specify pin for jmp instructions
     pio_sm_set_enabled(pio, sm, true);                      // start state machine running
 }
