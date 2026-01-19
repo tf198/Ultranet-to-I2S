@@ -44,7 +44,7 @@ void i2s_pio_init(PIO pio, uint sm, uint pin, uint offset)
     sm_config_set_out_pins (&c, pin, 3);                    // out pin range base and count
     sm_config_set_sideset_pins (&c, pin+1);                 // sideset pin range base
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);          // configure 8 depth output fifo
-    sm_config_set_out_shift(&c, false, false, 32);          // set shift left, no autpull for out FIFO
+    sm_config_set_out_shift(&c, false, false, 24);          // set shift left, no autpull for out FIFO
     pio_sm_init(pio, sm, offset, &c);                       // apply structure to state machine
 }
 
@@ -98,6 +98,7 @@ void core1_entry(void)                                      // Core1 starts exec
     for(count=0;count<8;count++)
     {
         ch[count] = (count + (sel_sw<<1)) & 7;              // offset channel number by selector switch setting
+        printf("Channel %d -> %d\n", count, ch[count]);
     }                                                       // (Lower two switch bits determine channel selection)
 
     pwm_setup();                                            // initialise PWM hardware and start outputs

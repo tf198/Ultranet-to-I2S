@@ -60,7 +60,7 @@ void ultranet_gpio_init(void)
 void ultranet_pio_init(PIO pio, uint sm, uint pin)
 {
     printf("GPIO Pin: %d\n", pin);
-    //gpio_init(pin);
+    gpio_init(pin);
     gpio_set_dir(pin, GPIO_IN);                               // set ultranet pin as input
     gpio_set_pulls(pin, true, false);                       // set pullup on ultranet pin
     uint offset = pio_add_program(pio, &ultranet_program);  // load code into pio mem
@@ -173,11 +173,18 @@ int8_t sample_channel(uint32_t sample) {
 void print_sample(uint32_t sample) {
 
     int8_t status = sample_channel(sample);
+    uint32_t audio = (sample << 4) & 0xFFFFFC00;
     printf("%08x %d ", sample, status);
 
     for (int i = sizeof(uint32_t) * 8 - 1; i >= 0; i--) {
         printf("%d", (sample >> i) & 1);
     }
+    printf(" ");
+
+    for (int i = sizeof(uint32_t) * 8 - 1; i >= 0; i--) {
+        printf("%d", (audio >> i) & 1);
+    }
+
     printf("\n");
 }
 
@@ -196,6 +203,7 @@ void analyse_samples() {
     }
     
 
+    // count the number of samples for each channel - hopefully they should be similar wth not too many invalid
     for (int i=0; i<8; i++) channels[i] = 0;
 
     ts = time_us_64();
@@ -287,6 +295,8 @@ int main()
     analyse_samples();
 #endif
 
+
+
     while (true)
     {
         // get next ultranet frame
@@ -299,9 +309,18 @@ int main()
         } else {
             // move 22 bits of audio into MSBs
             samples[channel] = (sample << 4) & 0xFFFFFC00;
+            //if (total % 512 < 256) {
+            //    samples[channel] = 0x0FFF0F0F;
+            //} else {
+            //    samples[channel] = 0x0;
+            //}
             led_state = 0xFFFFFFFF;
         }
-        
+
+        //if(total %1000000 < 20) {
+        //    printf("%d %08x %d %d\n", channel, samples[channel], samples[channel], (signed)samples[channel]);
+        //}
+
         if(total % 5000000 == 0) {
             printf("Dropped: %lu/%lu [%lu%%]\n", dropped, total, dropped*100/total);
             dropped = total = 0;

@@ -43,7 +43,7 @@
 #define UNET_SM 0                   // state machine to use for Ultranet input
 #define UNET_DISCARD 1000000        // discard this many samples to sync
 #ifdef MCLK                         // if we want an I2S MCLK clock
-    #define MCLK_PIN 24             // I2S Master Clock Pin (if used)
+    #define MCLK_PIN 4              // I2S Master Clock Pin (if used)
     #define MCLK_PIO pio0           // state machine for I2S master clock
     #define MCLK_SM 1               // state machine for I2S master clock
 #endif // MCLK
@@ -51,10 +51,10 @@
 #define I2S_PIO pio1                // PIO 1 is dedicated to I2S outputs (all 4 SMs)
 #define I2S1_PINS 6                 // base for I2S output pins (3 pins starting point)
 #define I2S2_PINS 9                 // base for I2S output pins (3 pins starting point)
-#define I2S3_PINS 8                 // base for I2S output pins (3 pins starting point)
-#define I2S4_PINS 18                // base for I2S output pins (3 pins starting point)
+#define I2S3_PINS 12                 // base for I2S output pins (3 pins starting point)
+#define I2S4_PINS 15                // base for I2S output pins (3 pins starting point)
 // Selector binary switch (3 pole)
-#define SELECTOR_SW_BASE 11         // base pin (switch is 3-pin, base+2) switches to ground
+#define SELECTOR_SW_BASE 5         // base pin (switch is 3-pin, base+2) switches to ground
 #define SW_COMM_LOW                 // switch common pin(s) are connected to 0v
 // #define SW_COMM_HIGH             // switch common pin(s) are connected to 3.3v
 // ws2812 multicolour LED driving
@@ -78,14 +78,14 @@
 #define PICO_LED                    // Uncomment to use normal LED on standard PICO boards
 #define STREAM_LED_RESET 200000     // Period in us to reset stream indicator LED
 // for PWM analog audio outputs
-#define PIN_PWM_1A 14               // A channel of PWM slice (left audio)
-#define PIN_PWM_1B 15               // B channel of PWM slice (right audio)
+#define PIN_PWM_1A 18               // A channel of PWM slice (left audio)
+#define PIN_PWM_1B 19               // B channel of PWM slice (right audio)
 #define PIN_PWM_2A 20               // A channel of PWM slice (left audio)
 #define PIN_PWM_2B 21               // B channel of PWM slice (right audio)
 #define PIN_PWM_3A 26               // A channel of PWM slice (left audio)
 #define PIN_PWM_3B 27               // B channel of PWM slice (right audio)
-#define PIN_PWM_4A 28               // A channel of PWM slice (left audio)
-#define PIN_PWM_4B 29               // B channel of PWM slice (right audio)
+#define PIN_PWM_4A 22               // A channel of PWM slice (left audio)
+#define PIN_PWM_4B 28               // B channel of PWM slice (right audio)
 
 // these need to be "volatile" otherwise the compiler optimises them out!
 extern volatile uint32_t samples[8]; // array of samples read from Ultranet stream
