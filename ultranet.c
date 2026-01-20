@@ -197,7 +197,7 @@ void analyse_samples() {
     uint32_t total = 0;
 
     // dump some samples so we can see what we are dealing with
-    for (int i=0; i<200; i++) {
+    for (int i=0; i<500; i++) {
         sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);
         print_sample(sample);
     }

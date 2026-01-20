@@ -44,7 +44,7 @@ void i2s_pio_init(PIO pio, uint sm, uint pin, uint offset)
     sm_config_set_out_pins (&c, pin, 3);                    // out pin range base and count
     sm_config_set_sideset_pins (&c, pin+1);                 // sideset pin range base
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);          // configure 8 depth output fifo
-    sm_config_set_out_shift(&c, false, false, 24);          // set shift left, no autpull for out FIFO
+    sm_config_set_out_shift(&c, false, false, 32);          // set shift left, no autpull for out FIFO
     pio_sm_init(pio, sm, offset, &c);                       // apply structure to state machine
 }
 
@@ -129,43 +129,43 @@ void core1_entry(void)                                      // Core1 starts exec
     {
         // continually load pio FIFOs for I2S outputs, and PWM registers for PWM outputs
         pio_sm_put_blocking(I2S_PIO, 0, samples[ch[0]]);    // subframe 1 goes to I2S0 channel 1
-
-        ssample = (0x80000000 + (signed)samples[ch[0]]);
-        pwm_set_a(slice[0], (ssample>>20));                 // PWM value is high 12 bits of audio
+        
+        //ssample = (0x80000000 + (signed)samples[ch[0]]);
+        //pwm_set_a(slice[0], (ssample>>20));                 // PWM value is high 12 bits of audio
 
         pio_sm_put_blocking(I2S_PIO, 1, samples[ch[2]]);    // subframe 3 goes to I2S1 channel 1
-
-        ssample = (0x80000000 + (signed)samples[ch[2]]);
-        pwm_set_a(slice[1], (ssample>>20));                 // PWM value is high 12 bits of audio
+        
+        //ssample = (0x80000000 + (signed)samples[ch[2]]);
+        //pwm_set_a(slice[1], (ssample>>20));                 // PWM value is high 12 bits of audio
 
         pio_sm_put_blocking(I2S_PIO, 2, samples[ch[4]]);    // subframe 5 goes to I2S2 channel 1
-
-        ssample = (0x80000000 + (signed)samples[ch[4]]);
-        pwm_set_a(slice[2], (ssample>>20));                 // PWM value is high 12 bits of audio
+        
+        //ssample = (0x80000000 + (signed)samples[ch[4]]);
+        //pwm_set_a(slice[2], (ssample>>20));                 // PWM value is high 12 bits of audio
 
         pio_sm_put_blocking(I2S_PIO, 3, samples[ch[6]]);    // subframe 7 goes to I2S3 channel 1
-
-        ssample = (0x80000000 + (signed)samples[ch[6]]);
-        pwm_set_a(slice[3], (ssample>>20));                 // PWM value is high 12 bits of audio
+        
+        //ssample = (0x80000000 + (signed)samples[ch[6]]);
+        //pwm_set_a(slice[3], (ssample>>20));                 // PWM value is high 12 bits of audio
 
         pio_sm_put_blocking(I2S_PIO, 0, samples[ch[1]]);    // subframe 2 goes to I2S0 channel 2
-
-        ssample = (0x80000000 + (signed)samples[ch[1]]);
-        pwm_set_b(slice[0], (ssample>>20));                 // PWM value is high 12 bits of audio
+        
+        //ssample = (0x80000000 + (signed)samples[ch[1]]);
+        //pwm_set_b(slice[0], (ssample>>20));                 // PWM value is high 12 bits of audio
 
         pio_sm_put_blocking(I2S_PIO, 1, samples[ch[3]]);    // subframe 4 goes to I2S1 channel 2
-
-        ssample = (0x80000000 + (signed)samples[ch[3]]);
-        pwm_set_b(slice[1], (ssample>>20));                 // PWM value is high 12 bits of audio
+        
+        //ssample = (0x80000000 + (signed)samples[ch[3]]);
+        //pwm_set_b(slice[1], (ssample>>20));                 // PWM value is high 12 bits of audio
 
         pio_sm_put_blocking(I2S_PIO, 2, samples[ch[5]]);    // subframe 6 goes to I2S2 channel 2
-
-        ssample = (0x80000000 + (signed)samples[ch[5]]);
-        pwm_set_b(slice[2], (ssample>>20));                 // PWM value is high 12 bits of audio
+        
+        //ssample = (0x80000000 + (signed)samples[ch[5]]);
+        //pwm_set_b(slice[2], (ssample>>20));                 // PWM value is high 12 bits of audio
 
         pio_sm_put_blocking(I2S_PIO, 3, samples[ch[7]]);    // subframe 8 goes to I2S3 channel 2
-
-        ssample = (0x80000000 + (signed)samples[ch[7]]);
-        pwm_set_b(slice[3], (ssample>>20));                 // PWM value is high 12 bits of audio
+        
+        //ssample = (0x80000000 + (signed)samples[ch[7]]);
+        //pwm_set_b(slice[3], (ssample>>20));                 // PWM value is high 12 bits of audio
     }
 }
