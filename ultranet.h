@@ -15,6 +15,8 @@
 */
 
 #include <stdio.h>
+#include <math.h>
+#include <stdlib.h>
 #include "pico/stdlib.h"
 #include "hardware/pio.h"
 #include "hardware/pwm.h"
@@ -29,9 +31,14 @@
 #define VERSION "1.2"
 
 // conditional compilation switches for hardware options
-// #define DEBUG                    // enable debug code DEBUG DEBUG DEBUG
+//#define DEBUG                    // enable debug code DEBUG DEBUG DEBUG
 // #define WS2812                      // Our board has a ws2812 programmable LED
+#define LOGGING
 #define MCLK                        // Enable MCLK clock for I2S devices
+
+#define SAMPLERATE 48000
+#define BITRATE 16
+#define TEST_SIGNAL 440
 
 #define CLOCKSPEED ultranet_cs     // Required clockspeed (from pio)
 #define AUDIV ultranet_cy           // Audio divider for pio timing (from pio))
@@ -88,9 +95,13 @@
 #define PIN_PWM_4B 28               // B channel of PWM slice (right audio)
 
 // these need to be "volatile" otherwise the compiler optimises them out!
-extern volatile uint32_t samples[8]; // array of samples read from Ultranet stream
+extern volatile int32_t samples[8]; // array of samples read from Ultranet stream
 extern volatile uint32_t led_state; // current value last sent to WS2812 LED
 
 extern void core1_entry(void);      // main process for core 1, defined in "core1.c"
 extern void set_core1_info(void);   // set binary info for pins used by core1
 extern uint get_selector(void);     // return selector switch state in low 3 bits
+
+#ifdef TEST_SIGNAL
+extern int32_t* generate_test_signal(uint16_t, uint16_t);
+#endif

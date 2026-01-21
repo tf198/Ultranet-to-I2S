@@ -22,7 +22,7 @@
 .program ultranet
 
 .define public cs 196500
-.define public cy 8                 ; cycle delay: 24.576 * 8 = 196.608MHz - run cpu clock at 196.5MHz
+.define public cy 8            ; cycle delay: 24.576 * 8 = 196.608MHz - run cpu clock at 196.5MHz
                                     ; cycle delay: 24.576 * 7 = 172.032MHz - run cpu clock at 172MHz
                                     ; cycle delay: 24.576 * 6 = 147.456MHz - run cpu clock at 150MHz
 .define public mp 3                 ; sample mid-point of incoming pulses (half cycle delay)

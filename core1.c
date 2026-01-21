@@ -90,18 +90,12 @@ void core1_entry(void)                                      // Core1 starts exec
 {
     uint i2s_offset;                                        // position for i2s code in pio (shared for all SMs)
     volatile uint32_t ssample;                              // signed version of audio sample
+    volatile int32_t value;
     uint selector = get_selector();                         // read selector switch
     int count;                                              // general purpose counter
     uint ch[8], sel_sw;                                     // channel index into samples array from selector switch
 
-    sel_sw = get_selector();                                // read selector switch GPIO pins
-    for(count=0;count<8;count++)
-    {
-        ch[count] = (count + (sel_sw<<1)) & 7;              // offset channel number by selector switch setting
-        printf("Channel %d -> %d\n", count, ch[count]);
-    }                                                       // (Lower two switch bits determine channel selection)
-
-    pwm_setup();                                            // initialise PWM hardware and start outputs
+    //pwm_setup();                                            // initialise PWM hardware and start outputs
 
 #ifdef MCLK
     mclk_pio_init(MCLK_PIO, MCLK_SM, MCLK_PIN);             // uncomment to enable I2S MCLK
@@ -109,21 +103,35 @@ void core1_entry(void)                                      // Core1 starts exec
 
     i2s_offset = pio_add_program(I2S_PIO, &i2s_program);    // load i2c output code once for all state machines
     i2s_pio_init(I2S_PIO, 0, I2S1_PINS, i2s_offset);        // all 4 state machines use the same code
-    i2s_pio_init(I2S_PIO, 1, I2S2_PINS, i2s_offset);
-    i2s_pio_init(I2S_PIO, 2, I2S3_PINS, i2s_offset);
-    i2s_pio_init(I2S_PIO, 3, I2S4_PINS, i2s_offset);
+    //i2s_pio_init(I2S_PIO, 1, I2S2_PINS, i2s_offset);
+    //i2s_pio_init(I2S_PIO, 2, I2S3_PINS, i2s_offset);
+    //i2s_pio_init(I2S_PIO, 3, I2S4_PINS, i2s_offset);
     sleep_ms(200);                                          // wait for incoming samples to start
     // ensure there is data in each output FIFO before starting the state machines
     pio_sm_put_blocking(I2S_PIO, 0, samples[ch[0]]);        // subframe 1 goes to I2S0 channel 1
-    pio_sm_put_blocking(I2S_PIO, 1, samples[ch[2]]);        // subframe 3 goes to I2S1 channel 1
-    pio_sm_put_blocking(I2S_PIO, 2, samples[ch[4]]);        // subframe 5 goes to I2S2 channel 1
-    pio_sm_put_blocking(I2S_PIO, 3, samples[ch[6]]);        // subframe 7 goes to I2S3 channel 1
+    //pio_sm_put_blocking(I2S_PIO, 1, samples[ch[2]]);        // subframe 3 goes to I2S1 channel 1
+    //pio_sm_put_blocking(I2S_PIO, 2, samples[ch[4]]);        // subframe 5 goes to I2S2 channel 1
+    //pio_sm_put_blocking(I2S_PIO, 3, samples[ch[6]]);        // subframe 7 goes to I2S3 channel 1
     pio_sm_put_blocking(I2S_PIO, 0, samples[ch[1]]);        // subframe 2 goes to I2S0 channel 2
-    pio_sm_put_blocking(I2S_PIO, 1, samples[ch[3]]);        // subframe 4 goes to I2S1 channel 2
-    pio_sm_put_blocking(I2S_PIO, 2, samples[ch[5]]);        // subframe 6 goes to I2S2 channel 2
-    pio_sm_put_blocking(I2S_PIO, 3, samples[ch[7]]);        // subframe 8 goes to I2S3 channel 2
+    //pio_sm_put_blocking(I2S_PIO, 1, samples[ch[3]]);        // subframe 4 goes to I2S1 channel 2
+    //pio_sm_put_blocking(I2S_PIO, 2, samples[ch[5]]);        // subframe 6 goes to I2S2 channel 2
+    //pio_sm_put_blocking(I2S_PIO, 3, samples[ch[7]]);        // subframe 8 goes to I2S3 channel 2
 
     pio_set_sm_mask_enabled(I2S_PIO, 0xF, true);            // enable all I2S state machines at the same instant
+
+#ifdef DEBUG
+    uint16_t sample_length = SAMPLERATE/TEST_SIGNAL;
+    int32_t* sinewave = generate_test_signal(sample_length, 32);
+
+    uint32_t t = 0;
+    while(true) {
+        value = sinewave[t++ % sample_length];
+        //printf("%d ", value);
+        pio_sm_put_blocking(I2S_PIO, 0, value);
+        pio_sm_put_blocking(I2S_PIO, 0, 0x0);
+        //if (t>sample_length) break;
+    }
+#endif
 
     while(true)                                             // output samples synchronised with I2S streams
     {
@@ -133,37 +141,37 @@ void core1_entry(void)                                      // Core1 starts exec
         //ssample = (0x80000000 + (signed)samples[ch[0]]);
         //pwm_set_a(slice[0], (ssample>>20));                 // PWM value is high 12 bits of audio
 
-        pio_sm_put_blocking(I2S_PIO, 1, samples[ch[2]]);    // subframe 3 goes to I2S1 channel 1
+        //pio_sm_put_blocking(I2S_PIO, 1, samples[ch[2]]);    // subframe 3 goes to I2S1 channel 1
         
         //ssample = (0x80000000 + (signed)samples[ch[2]]);
         //pwm_set_a(slice[1], (ssample>>20));                 // PWM value is high 12 bits of audio
 
-        pio_sm_put_blocking(I2S_PIO, 2, samples[ch[4]]);    // subframe 5 goes to I2S2 channel 1
+        //pio_sm_put_blocking(I2S_PIO, 2, samples[ch[4]]);    // subframe 5 goes to I2S2 channel 1
         
         //ssample = (0x80000000 + (signed)samples[ch[4]]);
         //pwm_set_a(slice[2], (ssample>>20));                 // PWM value is high 12 bits of audio
 
-        pio_sm_put_blocking(I2S_PIO, 3, samples[ch[6]]);    // subframe 7 goes to I2S3 channel 1
+        //pio_sm_put_blocking(I2S_PIO, 3, samples[ch[6]]);    // subframe 7 goes to I2S3 channel 1
         
         //ssample = (0x80000000 + (signed)samples[ch[6]]);
         //pwm_set_a(slice[3], (ssample>>20));                 // PWM value is high 12 bits of audio
 
-        pio_sm_put_blocking(I2S_PIO, 0, samples[ch[1]]);    // subframe 2 goes to I2S0 channel 2
+        pio_sm_put_blocking(I2S_PIO, 0, 0x00);    // subframe 2 goes to I2S0 channel 2
         
         //ssample = (0x80000000 + (signed)samples[ch[1]]);
         //pwm_set_b(slice[0], (ssample>>20));                 // PWM value is high 12 bits of audio
 
-        pio_sm_put_blocking(I2S_PIO, 1, samples[ch[3]]);    // subframe 4 goes to I2S1 channel 2
+        //pio_sm_put_blocking(I2S_PIO, 1, samples[ch[3]]);    // subframe 4 goes to I2S1 channel 2
         
         //ssample = (0x80000000 + (signed)samples[ch[3]]);
         //pwm_set_b(slice[1], (ssample>>20));                 // PWM value is high 12 bits of audio
 
-        pio_sm_put_blocking(I2S_PIO, 2, samples[ch[5]]);    // subframe 6 goes to I2S2 channel 2
+        //pio_sm_put_blocking(I2S_PIO, 2, samples[ch[5]]);    // subframe 6 goes to I2S2 channel 2
         
         //ssample = (0x80000000 + (signed)samples[ch[5]]);
         //pwm_set_b(slice[2], (ssample>>20));                 // PWM value is high 12 bits of audio
 
-        pio_sm_put_blocking(I2S_PIO, 3, samples[ch[7]]);    // subframe 8 goes to I2S3 channel 2
+        //pio_sm_put_blocking(I2S_PIO, 3, samples[ch[7]]);    // subframe 8 goes to I2S3 channel 2
         
         //ssample = (0x80000000 + (signed)samples[ch[7]]);
         //pwm_set_b(slice[3], (ssample>>20));                 // PWM value is high 12 bits of audio
