@@ -137,6 +137,9 @@ void set_binary_info(void)
     set_core1_info();                                       // info for pins used by core1
 }
 
+/**
+ * https://stackoverflow.com/questions/109023/count-the-number-of-set-bits-in-a-32-bit-integer
+ */
 int popcount(uint32_t i)
 {
      i = i - ((i >> 1) & 0x55555555);        // add pairs of bits
@@ -146,24 +149,27 @@ int popcount(uint32_t i)
      return  i >> 24;               // return just that top byte (after truncating to 32-bit even when int is wider than uint32_t)
 }
 
+/**
+ * https://blog.thestaticturtle.fr/ultranet-adventures-part-2/
+ * Check the given sample is a valid ultranet subframe and returns the channel number
+ */
 int8_t sample_channel(uint32_t sample) {
     int8_t channel = 0;
 
-    // check if pio completely filled the buffer
+    // check if pio completely filled the buffer - subframes always have LSB set
     if (sample & 1 == 0) return -1;
 
-    // check parity bit
-    uint8_t bitcount = popcount(sample & 0x0ffffffe);
-    uint8_t parity = (bitcount + 1) & 1;
-    if (sample >> 31 != parity) return -2; 
+    // check parity
+    if (popcount(sample & 0xFFFFFFF0) % 2 != 0) return -2;
 
-    // check play bit
-    if (sample >> 28 & 1 == 0) return -3;
+    // check play bit - pretty sure this is always set
+    if ((sample >> 28) & 1 == 0) return -3;
 
+    // 8 channels L/R with identifier in bits 4 & 5
     channel = ((sample >> 4) & 0b11) * 2;
     switch (sample & 0b1111) {
         case SYNC_B:
-            return -1; // Ultranet doesn't use SYNC_B
+            return -1; // Ultranet doesn't use SYNC_B though it would be valid
         case SYNC_M: // left or A channel
             return channel;
         case SYNC_W: // right or B channel
