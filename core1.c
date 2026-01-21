@@ -133,10 +133,13 @@ void core1_entry(void)                                      // Core1 starts exec
     }
 #endif
 
+    char c;
+    float volume = 1.0;
+    uint32_t t = 0;
     while(true)                                             // output samples synchronised with I2S streams
     {
         // continually load pio FIFOs for I2S outputs, and PWM registers for PWM outputs
-        pio_sm_put_blocking(I2S_PIO, 0, samples[ch[0]]);    // subframe 1 goes to I2S0 channel 1
+        pio_sm_put_blocking(I2S_PIO, 0, (int32_t)((float)samples[ch[0]]*volume));    // subframe 1 goes to I2S0 channel 1
         
         //ssample = (0x80000000 + (signed)samples[ch[0]]);
         //pwm_set_a(slice[0], (ssample>>20));                 // PWM value is high 12 bits of audio
@@ -175,5 +178,25 @@ void core1_entry(void)                                      // Core1 starts exec
         
         //ssample = (0x80000000 + (signed)samples[ch[7]]);
         //pwm_set_b(slice[3], (ssample>>20));                 // PWM value is high 12 bits of audio
+
+        if(t++ % 10000 == 0) {
+            c = stdio_getchar_timeout_us(0);
+            if(c != 254) {
+                printf("C: %d\n", c);
+                switch(c) {
+                    case '+':
+                    case '=':
+                        volume+=0.1;
+                        if (volume > 1) volume = 1.0;
+                        break;
+                    case '-':
+                    case '_':
+                        volume-=0.1;
+                        if (volume < 0) volume = 0.0;
+                        break;
+                }
+                printf("Volume: %f\n", volume);
+            }
+        }
     }
 }
