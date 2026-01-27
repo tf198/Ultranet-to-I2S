@@ -134,7 +134,7 @@ void set_binary_info(void)
 #ifdef PICO_LED
     bi_decl(bi_1pin_with_name(1, "PICO board normal LED enabled"));
 #endif // PICO_LED
-    set_core1_info();                                       // info for pins used by core1
+    //set_core1_info();                                       // info for pins used by core1
 }
 
 /**
@@ -223,7 +223,7 @@ void analyse_samples() {
         channels[c+4]++;
 
         
-        if (time_us_64() - ts > 1000000) {
+        if (total == 384000) {
             for (int i=0; i<12; i++) {
                 printf("%2d: %-6lu ", i-4, channels[i]);
                 channels[i] = 0;
@@ -307,7 +307,9 @@ int main()
     else
         ultranet_pio_init(UNET_PIO, UNET_SM, UNETL_PIN);    // initialise and start ultranet state machine
 
-    multicore_launch_core1(core1_entry);                    // start core 1
+    //multicore_launch_core1(core1_entry);                    // start core 1
+    connect_i2s(I2S_PIO, 0, I2S1_PINS, &samples[0]);
+
 
     sleep_ms(100);                                          // wait for core1 to start
 #ifdef LOGGING

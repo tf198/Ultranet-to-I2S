@@ -1,0 +1,51 @@
+
+#include "ultranet.h"
+
+void i2s_pio_init(PIO pio, uint sm, uint pin, uint offset)
+{
+    pio_sm_config c = i2s_program_get_default_config(offset);  // get default structure
+    pio_gpio_init(pio, pin);
+    pio_gpio_init(pio, pin+1);
+    pio_gpio_init(pio, pin+2);
+    pio_sm_set_consecutive_pindirs(pio, sm, pin, 3, true);  // set base+3 pins to output
+    sm_config_set_clkdiv_int_frac(&c, AUDIV, 0);            // set frequency of UNET_SM to fs x 256
+    sm_config_set_out_pins (&c, pin, 3);                    // out pin range base and count
+    sm_config_set_sideset_pins (&c, pin+1);                 // sideset pin range base
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);          // configure 8 depth output fifo
+    sm_config_set_out_shift(&c, false, false, 32);          // set shift left, no autpull for out FIFO
+    pio_sm_init(pio, sm, offset, &c);                       // apply structure to state machine
+}
+
+uint32_t dma_init(PIO pio, uint sm, volatile uint32_t* target) {
+    printf("Initialising DMA\n");
+    uint32_t pio_dma_chan = dma_claim_unused_channel(true);
+    dma_channel_config pio_dma_chan_config = dma_channel_get_default_config(pio_dma_chan);
+    // transfer 32 bits
+    channel_config_set_transfer_data_size(&pio_dma_chan_config, DMA_SIZE_32);
+    // increment read address
+    channel_config_set_read_increment(&pio_dma_chan_config, true);
+    channel_config_set_write_increment(&pio_dma_chan_config, false);
+    channel_config_set_ring(&pio_dma_chan_config, false, 3);
+    // Transfer when PIO SM TX FIFO has space
+    channel_config_set_dreq(&pio_dma_chan_config, pio_get_dreq(pio, sm, true));
+    
+    dma_channel_configure(
+        pio_dma_chan,
+        &pio_dma_chan_config,
+        &pio->txf[sm],
+        target,
+        dma_encode_endless_transfer_count(), // TODO: check if this is the right way to do this
+        false
+    );
+    return pio_dma_chan;
+}
+
+void connect_i2s(PIO pio, uint sm, uint pins, volatile uint32_t* target) {
+    int i2s_offset = pio_add_program(pio, &i2s_program);    // load i2c output code once for all state machines
+    i2s_pio_init(pio, sm, I2S1_PINS, i2s_offset);        // all 4 state machines use the same code
+
+    uint32_t pio_dma_chan = dma_init(pio, sm, target);
+
+    dma_channel_start(pio_dma_chan);
+    pio_sm_set_enabled(pio, sm, true);
+}

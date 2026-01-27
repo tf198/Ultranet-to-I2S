@@ -21,7 +21,8 @@
 #include "hardware/pio.h"
 #include "hardware/pwm.h"
 #include "hardware/clocks.h"
-#include "pico/multicore.h"
+#include "hardware/dma.h"
+//#include "pico/multicore.h"
 #include "pico/binary_info.h"
 
 #include "build/ultranet.pio.h"     // derived automatically from the "ultranet.pio" source file
@@ -31,7 +32,7 @@
 #define VERSION "1.2"
 
 // conditional compilation switches for hardware options
-//#define DEBUG                    // enable debug code DEBUG DEBUG DEBUG
+// #define DEBUG                    // enable debug code DEBUG DEBUG DEBUG
 // #define WS2812                      // Our board has a ws2812 programmable LED
 #define LOGGING
 #define MCLK                        // Enable MCLK clock for I2S devices
@@ -98,8 +99,9 @@
 extern volatile int32_t samples[8]; // array of samples read from Ultranet stream
 extern volatile uint32_t led_state; // current value last sent to WS2812 LED
 
-extern void core1_entry(void);      // main process for core 1, defined in "core1.c"
-extern void set_core1_info(void);   // set binary info for pins used by core1
+extern void connect_i2s(PIO, uint, uint, volatile uint32_t*);
+//extern void core1_entry(void);      // main process for core 1, defined in "core1.c"
+//extern void set_core1_info(void);   // set binary info for pins used by core1
 extern uint get_selector(void);     // return selector switch state in low 3 bits
 
 #ifdef TEST_SIGNAL

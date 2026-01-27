@@ -15,9 +15,9 @@ if(WIN32)
 else()
     set(USERHOME $ENV{HOME})
 endif()
-set(sdkVersion 2.1.0)
+set(sdkVersion 2.2.0)
 set(toolchainVersion 13_3_Rel1)
-set(picotoolVersion 2.1.0)
+set(picotoolVersion 2.2.0-a4)
 set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
 if (EXISTS ${picoVscode})
     include(${picoVscode})
@@ -35,7 +35,7 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name
 
-add_executable(Ultranet ultranet.c led.c core1.c ultranet.h)
+add_executable(Ultranet ultranet.c led.c i2s.c ultranet.h)
 
 pico_set_program_name(Ultranet "Ultranet")
 # program version string is now defined in main source file
@@ -46,7 +46,7 @@ pico_generate_pio_header(Ultranet ${CMAKE_CURRENT_LIST_DIR}/ultranet.pio)
 
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(Ultranet 1)
-pico_enable_stdio_usb(Ultranet 0)
+pico_enable_stdio_usb(Ultranet 1)
 
 # Add the standard library to the build
 target_link_libraries(Ultranet
@@ -62,7 +62,8 @@ target_link_libraries(Ultranet
         hardware_pio
         hardware_pwm
         hardware_clocks
-        pico_multicore
+        hardware_dma
+        #pico_multicore
         pico_cyw43_arch_none
         )
 
