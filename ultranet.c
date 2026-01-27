@@ -40,10 +40,11 @@ static const uint32_t SYNC_W = 0b0111;
 // need to align so we can use the DMA ring buffer
 volatile int32_t samples[8] __attribute__((aligned(2*sizeof(int32_t))));   // array of samples read from Ultranet stream
 
-volatile uint32_t samples_c[8] = {0};
-volatile uint32_t samples_d[5] = {0};
-volatile uint32_t samples_received = 0;
-volatile uint64_t samples_ts = 0;
+uint32_t samples_c[8] = {0};
+uint32_t samples_d[5] = {0};
+uint32_t samples_received = 0;
+uint64_t samples_ts = 0;
+volatile float ultranet_samples_dropped = 0;
 
 void ultranet_gpio_init(void)
 {
@@ -136,13 +137,15 @@ int8_t sample_channel(uint32_t sample) {
 }
 
 void reset_stats() {
+    ultranet_samples_dropped = (float)samples_d[0]/samples_received; // TODO - rolling average
+
     memset((void*)samples_c, 0, 8*sizeof(uint32_t));
     memset((void*)samples_d, 0, 5*sizeof(uint32_t));
     samples_received = 0;
     samples_ts = time_us_64();
 }
 
-void print_stats() {
+void ultranet_print_stats() {
     for (int i=0; i<8; i++) {
         printf("%2d: %-6lu ", i, samples_c[i]);
     }
@@ -193,7 +196,7 @@ void analyse_samples() {
 
         
         if (samples_received == 384000) {
-            print_stats();
+            ultranet_print_stats();
         }
     }
 }

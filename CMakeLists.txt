@@ -63,7 +63,7 @@ target_link_libraries(Ultranet
         hardware_pwm
         hardware_clocks
         hardware_dma
-        #pico_multicore
+        pico_multicore
         pico_cyw43_arch_none
         )
 

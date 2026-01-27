@@ -1,5 +1,5 @@
 #include "ultranet.h";
-
+#include "pico/multicore.h";
 
 int main()
 {
@@ -21,9 +21,6 @@ int main()
     ultranet_gpio_init();                                   // initialise required GPIO pins
     cyw43_arch_init(); // TODO: Figure out how to get rid of this
 
-    // Warning: This causes clicking on output
-    //add_alarm_in_us(repeat_us, alarm_callback, (void*)&repeat_us, false);  // start timer for stream LED blanking
-
     selector = get_selector();                              // read selector switch once at boot time
 #ifdef LOGGING
     printf("Clock: %dkhz (%d,%d)\n", clock_get_hz(clk_sys)/1000, ultranet_cy, ultranet_mp);
@@ -35,7 +32,7 @@ int main()
     else
         ultranet_pio_init(UNET_PIO, UNET_SM, UNETL_PIN);    // initialise and start ultranet state machine
 
-    
+    // start DMA transfer of memory address to i2s
     i2s_connect_channels(I2S_PIO, 0, I2S1_PINS, &samples[0]);
 
 
@@ -49,6 +46,11 @@ int main()
     analyse_samples();
 #endif
 
-    ultranet_decode_forever();
+    multicore_launch_core1(ultranet_decode_forever);
+    
+    while(true) {
+        sleep_ms(1000);
+        printf("Dropped: %f%%\n", ultranet_samples_dropped*100);
+    }
 
 }

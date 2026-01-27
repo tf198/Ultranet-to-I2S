@@ -80,8 +80,10 @@ extern volatile int32_t samples[8]; // array of samples read from Ultranet strea
 extern void ultranet_gpio_init(void);           // setup gpio for selector
 extern void ultranet_pio_init(PIO, uint, uint); // setup state machine to decode frames
 extern void ultranet_decode_forever(void);      // starts decoding ultranet frames and writing them to samples array
+extern void ultranet_print_stats(void);
+extern volatile float ultranet_samples_dropped;
 
-extern void i2s_connect_channels(PIO, uint, uint, volatile uint32_t*);
+extern void i2s_connect(PIO, uint, uint, volatile uint32_t*);
 
 extern uint get_selector(void);     // return selector switch state in low 3 bits
 
