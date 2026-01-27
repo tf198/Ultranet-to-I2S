@@ -17,7 +17,7 @@ void i2s_pio_init(PIO pio, uint sm, uint pin, uint offset)
 }
 
 uint32_t dma_init(PIO pio, uint sm, volatile uint32_t* target) {
-    printf("Initialising DMA\n");
+    printf("Initialising DMA for state machine %d\n", sm);
     uint32_t pio_dma_chan = dma_claim_unused_channel(true);
     dma_channel_config pio_dma_chan_config = dma_channel_get_default_config(pio_dma_chan);
     // transfer 32 bits

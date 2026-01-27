@@ -37,7 +37,7 @@ static const uint32_t SYNC_B = 0b1111;
 static const uint32_t SYNC_M = 0b1011;
 static const uint32_t SYNC_W = 0b0111;
 
-volatile int32_t samples[8];   // array of samples read from Ultranet stream
+volatile int32_t samples[8] __attribute__((aligned(2*sizeof(int32_t))));   // array of samples read from Ultranet stream
 
 void ultranet_gpio_init(void)
 {
@@ -74,28 +74,6 @@ void ultranet_pio_init(PIO pio, uint sm, uint pin)
 }
 
 volatile uint32_t led_state = 0xFFFFFFFF;   
-#ifdef WS2812                           
-void ws2812_pio_init(PIO pio, uint sm, uint pin)            // Set up PIO SM for ws2812 LED module
-{
-    uint offset = pio_add_program(pio, &ws2812_program);    // PIO program shares code space with UNET and MCLK
-    pio_gpio_init(pio, pin);                                // Set up GPIO pin for PIO...
-    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, true);  // ...output
-
-    pio_sm_config c = ws2812_program_get_default_config(offset);
-    sm_config_set_sideset_pins(&c, pin);
-    sm_config_set_out_shift(&c, false, true, 24);           // set shift direction RIGHT, no autopull
-    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);          // use 8 deep TX FIFO
-
-#define CYCLES_PER_BIT ((ws2812_T1)+(ws2812_T2)+(ws2812_T3)) // constants defined in .pio source file
-    float div = clock_get_hz(clk_sys) / (800000 * CYCLES_PER_BIT);  // ws2812 needs precise 800KHz timing
-    sm_config_set_clkdiv(&c, div);
-
-    pio_sm_init(pio, sm, offset, &c);
-    pio_sm_set_enabled(pio, sm, true);                      // Set ws2812 PIO state machine running
-    led_state = BLACK;                                      // initialise WS2812 LED to all off
-    pio_sm_put(pio, sm, led_state);                         // Clear all LED colours to off
-}
-#endif // WS2812
 
 /*
 * Timer callback for periodically turning off Ultranet detected LED
@@ -128,9 +106,6 @@ void set_binary_info(void)
 #ifdef MCLK
     bi_decl(bi_1pin_with_name(MCLK_PIN, "I2S MCLK Output"));
 #endif // MCLK
-#ifdef WS2812
-    bi_decl(bi_1pin_with_name(WS2812_PIN, "WS2812 NeoPixel LED"));
-#endif // WS2812
 #ifdef PICO_LED
     bi_decl(bi_1pin_with_name(1, "PICO board normal LED enabled"));
 #endif // PICO_LED
@@ -138,6 +113,7 @@ void set_binary_info(void)
 }
 
 /**
+ * Count number of bits set in a 32bit integer.
  * https://stackoverflow.com/questions/109023/count-the-number-of-set-bits-in-a-32-bit-integer
  */
 int popcount(uint32_t i)
@@ -150,8 +126,8 @@ int popcount(uint32_t i)
 }
 
 /**
- * https://blog.thestaticturtle.fr/ultranet-adventures-part-2/
  * Check the given sample is a valid ultranet subframe and returns the channel number
+ * https://blog.thestaticturtle.fr/ultranet-adventures-part-2/
  */
 int8_t sample_channel(uint32_t sample) {
     int8_t channel = 0;
@@ -286,10 +262,6 @@ int main()
 #else
     sleep_ms(500);                                          // allow time for clocks etc. to settle
 #endif // DEBUG
-
-#ifdef WS2812
-    ws2812_pio_init(WS2812_PIO, WS2812_SM, WS2812_PIN);     // ws2812 output pio state machine
-#endif // WS2812
 
     ultranet_gpio_init();                                   // initialise required GPIO pins
 
