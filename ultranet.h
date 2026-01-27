@@ -77,9 +77,12 @@
 // these need to be "volatile" otherwise the compiler optimises them out!
 extern volatile int32_t samples[8]; // array of samples read from Ultranet stream
 
-extern void connect_i2s(PIO, uint, uint, volatile uint32_t*);
-//extern void core1_entry(void);      // main process for core 1, defined in "core1.c"
-//extern void set_core1_info(void);   // set binary info for pins used by core1
+extern void ultranet_gpio_init(void);           // setup gpio for selector
+extern void ultranet_pio_init(PIO, uint, uint); // setup state machine to decode frames
+extern void ultranet_decode_forever(void);      // starts decoding ultranet frames and writing them to samples array
+
+extern void i2s_connect_channels(PIO, uint, uint, volatile uint32_t*);
+
 extern uint get_selector(void);     // return selector switch state in low 3 bits
 
 #ifdef TEST_SIGNAL

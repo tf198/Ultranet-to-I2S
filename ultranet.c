@@ -226,61 +226,10 @@ uint get_selector(void)
 #endif // SW_COMM_LOW
 }
 
-int main()
+void ultranet_decode_forever()
 {
     volatile uint32_t sample;                               // temp store for sample read from Ultranet stream
-    uint selector;                                          // Selector switch state
-    
-    int32_t dropped = 0;
-    int32_t total = 0;
     int8_t channel;
-    int32_t value;
-
-    set_binary_info();                                      // info for querying by picotool                                    // initialise SDK libraries and interfaces
-    if (!set_sys_clock_khz(CLOCKSPEED,true)) {
-        printf("Failed to set clock\n");
-        return 1;
-    };                    // set cpu clock frequency
-    stdio_init_all();   
-
-#ifdef DEBUG
-    sleep_ms(5000);                                         // allow time for USB serial to connect
-#else
-    sleep_ms(500);                                          // allow time for clocks etc. to settle
-#endif // DEBUG
-
-    ultranet_gpio_init();                                   // initialise required GPIO pins
-    cyw43_arch_init(); // TODO: Figure out how to get rid of this
-
-    // Warning: This causes clicking on output
-    //add_alarm_in_us(repeat_us, alarm_callback, (void*)&repeat_us, false);  // start timer for stream LED blanking
-
-    selector = get_selector();                              // read selector switch once at boot time
-#ifdef LOGGING
-    printf("Clock: %dkhz (%d,%d)\n", clock_get_hz(clk_sys)/1000, ultranet_cy, ultranet_mp);
-    printf("Selector = %d\n", selector);
-#endif
-
-    if(selector & 0b100)                                    // Most significant switch bit selects Ultranet input stream pin
-        ultranet_pio_init(UNET_PIO, UNET_SM, UNETH_PIN);    // initialise and start ultranet state machine
-    else
-        ultranet_pio_init(UNET_PIO, UNET_SM, UNETL_PIN);    // initialise and start ultranet state machine
-
-    //multicore_launch_core1(core1_entry);                    // start core 1
-    connect_i2s(I2S_PIO, 0, I2S1_PINS, &samples[0]);
-
-
-    sleep_ms(100);                                          // wait for core1 to start
-#ifdef LOGGING
-    puts("FINISHED setting everything up\n");
-#endif
-
-    // discard first 200 samples
-    //for(int count=0; count<200; count++)  sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);    // get frame word from Ultranet FIFO
-
-#ifdef DEBUG
-    analyse_samples();
-#endif
 
     reset_stats();
 
