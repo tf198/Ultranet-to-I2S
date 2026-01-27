@@ -1,15 +1,18 @@
 #include "ultranet.h"
 #include "pico/multicore.h"
+#include "pico/cyw43_arch.h"
 
 int main()
 {
     uint selector;
 
     //set_binary_info();                                      // info for querying by picotool                                    // initialise SDK libraries and interfaces
-    if (!set_sys_clock_khz(CLOCKSPEED,true)) {
-        printf("Failed to set clock\n");
-        return 1;
-    };
+    if (CLOCKSPEED != 150000) {
+        if (!set_sys_clock_khz(CLOCKSPEED,true)) {
+            printf("Failed to set clock\n");
+            return 1;
+        };
+    }
     stdio_init_all();   
 
 #ifdef DEBUG
@@ -43,14 +46,14 @@ int main()
 
 
 #ifdef DEBUG
-    analyse_samples();
+    ultranet_analyse_samples();
 #endif
 
     multicore_launch_core1(ultranet_decode_forever);
     
     while(true) {
         sleep_ms(1000);
-        printf("Dropped: %0.2f%%\n", ultranet_samples_dropped*100);
+        printf("Dropped: %0.2f%% \n", ultranet_samples_dropped*100);
     }
 
 }

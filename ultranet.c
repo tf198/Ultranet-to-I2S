@@ -42,8 +42,8 @@ volatile int32_t samples[8] __attribute__((aligned(2*sizeof(int32_t))));   // ar
 
 uint32_t samples_c[8] = {0};
 uint32_t samples_d[5] = {0};
-uint32_t samples_received = 0;
 uint64_t samples_ts = 0;
+volatile uint32_t ultranet_samples_received = 0;
 volatile float ultranet_samples_dropped = 0;
 
 void ultranet_gpio_init(void)
@@ -68,6 +68,11 @@ void ultranet_pio_init(PIO pio, uint sm, uint pin)
     gpio_set_pulls(pin, true, false);                       // set pullup on ultranet pin
     uint offset = pio_add_program(pio, &ultranet_program);  // load code into pio mem
     pio_sm_config c = ultranet_program_get_default_config(offset);  // get default structure
+
+    //const uint32_t div_int = 1; //SPDIF_RX_SYS_CLK_FREQ / SPDIF_RX_PIO_CLK_FREQ;
+    //const uint8_t  div_frac8 = (uint8_t) (((uint64_t) SPDIF_RX_SYS_CLK_FREQ * 256) / SPDIF_RX_PIO_CLK_FREQ - 256);
+    //printf("Set fractional scaling: %d/%d\n", div_int, div_frac8);
+    //sm_config_set_clkdiv(&c, 150000000.0/147456000.0);
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);          // configure 8 depth input fifo
     sm_config_set_in_pins (&c, pin);                        // input pin range base
     sm_config_set_in_shift(&c, true, false, 32);            // shift_right, no autopush, 32bit
@@ -114,7 +119,7 @@ int8_t sample_channel(uint32_t sample) {
     int8_t channel = 0;
 
     // check if pio completely filled the buffer - subframes always have LSB set
-    if (sample & 1 == 0) return -1; // TODO: This isn't catching 000..100 frames!?
+    if ((sample & 1) == 0) return -1;
 
     // check parity
     if (popcount(sample & 0xFFFFFFF0) % 2 != 0) return -2;
@@ -137,11 +142,11 @@ int8_t sample_channel(uint32_t sample) {
 }
 
 void reset_stats() {
-    ultranet_samples_dropped = (float)samples_d[0]/samples_received; // TODO - rolling average
+    ultranet_samples_dropped = (float)samples_d[0]/ultranet_samples_received; // TODO - rolling average
 
     memset((void*)samples_c, 0, 8*sizeof(uint32_t));
     memset((void*)samples_d, 0, 5*sizeof(uint32_t));
-    samples_received = 0;
+    ultranet_samples_received = 0;
     samples_ts = time_us_64();
 }
 
@@ -152,7 +157,7 @@ void ultranet_print_stats() {
     for (int i=1; i<5; i++) {
         printf("%2d: %-6lu ", i*-1, samples_d[i]);
     }
-    printf("X: %-7lu (%f%%) [%luns]\n", samples_received, samples_d[0]*100.0/samples_received, time_us_64()-samples_ts-1000000);
+    printf("X: %-7lu (%f%%) [%luns]\n", ultranet_samples_received, samples_d[0]*100.0/ultranet_samples_received, time_us_64()-samples_ts-1000000);
     reset_stats();
 }
 
@@ -179,7 +184,7 @@ void ultranet_dump_samples() {
     }
 }
 
-void analyse_samples() {
+void ultranet_analyse_samples() {
     volatile uint32_t sample;
     int8_t c;
 
@@ -187,7 +192,7 @@ void analyse_samples() {
     while(true) {
         sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);
         c = sample_channel(sample);
-        samples_received++;
+        ultranet_samples_received++;
         if (c < 0) {
             samples_d[0]++;
             samples_d[c*-1]++;
@@ -197,7 +202,7 @@ void analyse_samples() {
         }
 
         
-        if (samples_received == 384000) {
+        if (ultranet_samples_received == 384000) {
             ultranet_print_stats();
         }
     }
@@ -243,7 +248,7 @@ void ultranet_decode_forever()
         // get next ultranet frame
         sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);
         channel = sample_channel(sample);
-        samples_received++;
+        ultranet_samples_received++;
         if (channel < 0) {
             samples_d[0]++;
             samples_d[channel*-1]++;
@@ -253,7 +258,7 @@ void ultranet_decode_forever()
             samples[channel] = (int32_t)((sample << 4) & 0xFFFFFC00);
         }
 
-        if(samples_received == 384000) {
+        if(ultranet_samples_received == 384000) {
             reset_stats();
         }
     }

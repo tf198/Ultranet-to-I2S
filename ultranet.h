@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
 #include "pico/stdlib.h"
 #include "hardware/pio.h"
 #include "hardware/pwm.h"
@@ -31,7 +32,7 @@
 #define VERSION "1.2"
 
 // conditional compilation switches for hardware options
-//#define DEBUG                    // enable debug code DEBUG DEBUG DEBUG
+#define DEBUG                    // enable debug code DEBUG DEBUG DEBUG
 #define LOGGING
 #define MCLK                        // Enable MCLK clock for I2S devices
 
@@ -81,12 +82,15 @@ extern void ultranet_gpio_init(void);           // setup gpio for selector
 extern void ultranet_pio_init(PIO, uint, uint); // setup state machine to decode frames
 extern void ultranet_decode_forever(void);      // starts decoding ultranet frames and writing them to samples array
 extern void ultranet_print_stats(void);
+extern void ultranet_analyse_samples(void);
+
+extern volatile uint32_t ultranet_samples_received;
 extern volatile float ultranet_samples_dropped;
 
-extern void i2s_connect(PIO, uint, uint, volatile uint32_t*);
+extern void i2s_connect_channels(PIO, uint, uint, volatile uint32_t*);
 
 extern uint get_selector(void);     // return selector switch state in low 3 bits
 
 #ifdef TEST_SIGNAL
 extern int32_t* generate_test_signal(uint16_t, uint16_t);
-#endif
+#endif // TEST_SIGNAL
