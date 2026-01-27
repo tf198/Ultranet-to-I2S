@@ -3,12 +3,19 @@
 
 void i2s_pio_init(PIO pio, uint sm, uint pin, uint offset)
 {
+    uint32_t clk = clock_get_hz(clk_sys);
+    float ratio = clk/24576000.0;
+    uint div = (uint)ratio;
+    ratio -= div;
+    uint frac = ratio*256;
+    printf("Clock: %d [%f] -> %d %d\n", clk, ratio, div, frac);
+
     pio_sm_config c = i2s_program_get_default_config(offset);  // get default structure
     pio_gpio_init(pio, pin);
     pio_gpio_init(pio, pin+1);
     pio_gpio_init(pio, pin+2);
     pio_sm_set_consecutive_pindirs(pio, sm, pin, 3, true);  // set base+3 pins to output
-    sm_config_set_clkdiv_int_frac(&c, AUDIV, 0);            // set frequency of UNET_SM to fs x 256
+    sm_config_set_clkdiv_int_frac8(&c, div, frac);          // set frequency of UNET_SM to fs x 256
     sm_config_set_out_pins (&c, pin, 3);                    // out pin range base and count
     sm_config_set_sideset_pins (&c, pin+1);                 // sideset pin range base
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);          // configure 8 depth output fifo

@@ -1,5 +1,5 @@
-#include "ultranet.h";
-#include "pico/multicore.h";
+#include "ultranet.h"
+#include "pico/multicore.h"
 
 int main()
 {
@@ -9,13 +9,13 @@ int main()
     if (!set_sys_clock_khz(CLOCKSPEED,true)) {
         printf("Failed to set clock\n");
         return 1;
-    };                    // set cpu clock frequency
+    };
     stdio_init_all();   
 
 #ifdef DEBUG
     sleep_ms(5000);                                         // allow time for USB serial to connect
 #else
-    sleep_ms(500);                                          // allow time for clocks etc. to settle
+    sleep_ms(1000);                                          // allow time for clocks etc. to settle
 #endif // DEBUG
 
     ultranet_gpio_init();                                   // initialise required GPIO pins
@@ -50,7 +50,7 @@ int main()
     
     while(true) {
         sleep_ms(1000);
-        printf("Dropped: %f%%\n", ultranet_samples_dropped*100);
+        printf("Dropped: %0.2f%%\n", ultranet_samples_dropped*100);
     }
 
 }

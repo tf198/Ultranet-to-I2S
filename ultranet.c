@@ -167,10 +167,7 @@ void print_sample(uint32_t sample) {
     printf("\n");
 }
 
-void analyse_samples() {
-    volatile uint32_t sample;
-    int8_t c;
-
+void ultranet_dump_samples() {
     uint32_t test_samples[500];
 
     // dump some samples so we can see what we are dealing with
@@ -180,7 +177,12 @@ void analyse_samples() {
     for (int i=0; i<500; i++) {
         print_sample(test_samples[i]);
     }
-   
+}
+
+void analyse_samples() {
+    volatile uint32_t sample;
+    int8_t c;
+
     reset_stats();
     while(true) {
         sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);
