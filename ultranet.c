@@ -31,13 +31,19 @@
 */
 
 #include "ultranet.h"
-#include "led.h"
 
 static const uint32_t SYNC_B = 0b1111;
 static const uint32_t SYNC_M = 0b1011;
 static const uint32_t SYNC_W = 0b0111;
 
+// array for raw ultranet samples
+// need to align so we can use the DMA ring buffer
 volatile int32_t samples[8] __attribute__((aligned(2*sizeof(int32_t))));   // array of samples read from Ultranet stream
+
+volatile uint32_t samples_c[8] = {0};
+volatile uint32_t samples_d[5] = {0};
+volatile uint32_t samples_received = 0;
+volatile uint64_t samples_ts = 0;
 
 void ultranet_gpio_init(void)
 {
@@ -51,9 +57,6 @@ void ultranet_gpio_init(void)
         gpio_pull_down(count);                              // for switch common to +3.3v
 #endif // SW_COMM_LOW
     }
-#ifdef PICO_LED
-    pico_led_init();
-#endif // PICO_LED
 }
 
 // state machine init functions (used to be defined in <prog>.pio file)
@@ -73,26 +76,6 @@ void ultranet_pio_init(PIO pio, uint sm, uint pin)
     pio_sm_set_enabled(pio, sm, true);                      // start state machine running
 }
 
-volatile uint32_t led_state = 0xFFFFFFFF;   
-
-/*
-* Timer callback for periodically turning off Ultranet detected LED
-*  Outputs current state (as turned on by Ultranet stream code) then clears flag
-* If no Ultranet stream received, LED will turn off at next alarm tick
-* Note - this sometimes causes clicks!
-*/
-int64_t alarm_callback(alarm_id_t id, __unused void *repeatptr)
-{
-#ifdef WS2812
-    put_pixel(led_state);                                   // Output current sate of led_state flag to LED
-#endif // WS2812
-#ifdef PICO_LED
-    pico_set_led((led_state & ~LED_STREAM_MASK) > 0);       // led_state has been set by Ultranet stream code
-#endif // PICO_LED
-    led_state = led_state & LED_STREAM_MASK;                // Zero out the stream LED colour bits
-    return *(const uint32_t*)repeatptr;                     // return value is repeat time
-}
-
 // Embedded binary information (for picotool interrogation of programmed device)
 void set_binary_info(void)
 {
@@ -106,9 +89,6 @@ void set_binary_info(void)
 #ifdef MCLK
     bi_decl(bi_1pin_with_name(MCLK_PIN, "I2S MCLK Output"));
 #endif // MCLK
-#ifdef PICO_LED
-    bi_decl(bi_1pin_with_name(1, "PICO board normal LED enabled"));
-#endif // PICO_LED
     //set_core1_info();                                       // info for pins used by core1
 }
 
@@ -133,7 +113,7 @@ int8_t sample_channel(uint32_t sample) {
     int8_t channel = 0;
 
     // check if pio completely filled the buffer - subframes always have LSB set
-    if (sample & 1 == 0) return -1;
+    if (sample & 1 == 0) return -1; // TODO: This isn't catching 000..100 frames!?
 
     // check parity
     if (popcount(sample & 0xFFFFFFF0) % 2 != 0) return -2;
@@ -145,7 +125,7 @@ int8_t sample_channel(uint32_t sample) {
     channel = ((sample >> 4) & 0b11) * 2;
     switch (sample & 0b1111) {
         case SYNC_B:
-            return -1; // Ultranet doesn't use SYNC_B though it would be valid
+            return channel; // Start of ultranet frame on channel A
         case SYNC_M: // left or A channel
             return channel;
         case SYNC_W: // right or B channel
@@ -153,6 +133,24 @@ int8_t sample_channel(uint32_t sample) {
         default:
             return -4;
     }
+}
+
+void reset_stats() {
+    memset((void*)samples_c, 0, 8*sizeof(uint32_t));
+    memset((void*)samples_d, 0, 5*sizeof(uint32_t));
+    samples_received = 0;
+    samples_ts = time_us_64();
+}
+
+void print_stats() {
+    for (int i=0; i<8; i++) {
+        printf("%2d: %-6lu ", i, samples_c[i]);
+    }
+    for (int i=1; i<5; i++) {
+        printf("%2d: %-6lu ", i*-1, samples_d[i]);
+    }
+    printf("X: %-7lu (%f%%) [%luns]\n", samples_received, samples_d[0]*100.0/samples_received, time_us_64()-samples_ts-1000000);
+    reset_stats();
 }
 
 void print_sample(uint32_t sample) {
@@ -168,11 +166,7 @@ void print_sample(uint32_t sample) {
 
 void analyse_samples() {
     volatile uint32_t sample;
-    uint64_t ts;
     int8_t c;
-    uint32_t channels[12];
-    uint32_t invalid = 0;
-    uint32_t total = 0;
 
     uint32_t test_samples[500];
 
@@ -183,30 +177,23 @@ void analyse_samples() {
     for (int i=0; i<500; i++) {
         print_sample(test_samples[i]);
     }
-    
-
-    // count the number of samples for each channel - hopefully they should be similar wth not too many invalid
-    for (int i=0; i<12; i++) channels[i] = 0;
-
-    ts = time_us_64();
+   
+    reset_stats();
     while(true) {
         sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);
         c = sample_channel(sample);
-        total++;
+        samples_received++;
         if (c < 0) {
-            invalid++;
+            samples_d[0]++;
+            samples_d[c*-1]++;
+            //print_sample(sample);
+        } else {
+            samples_c[c]++;
         }
-        channels[c+4]++;
 
         
-        if (total == 384000) {
-            for (int i=0; i<12; i++) {
-                printf("%2d: %-6lu ", i-4, channels[i]);
-                channels[i] = 0;
-            }
-            printf("X: %-7lu (%f%%)\n", total, invalid*100.0/total);
-            invalid = total = 0;
-            ts = time_us_64();
+        if (samples_received == 384000) {
+            print_stats();
         }
     }
 }
@@ -242,7 +229,6 @@ uint get_selector(void)
 int main()
 {
     volatile uint32_t sample;                               // temp store for sample read from Ultranet stream
-    const uint64_t repeat_us = STREAM_LED_RESET;            // Repeat time period for alarm to clear Ultranet stream LED
     uint selector;                                          // Selector switch state
     
     int32_t dropped = 0;
@@ -264,6 +250,7 @@ int main()
 #endif // DEBUG
 
     ultranet_gpio_init();                                   // initialise required GPIO pins
+    cyw43_arch_init(); // TODO: Figure out how to get rid of this
 
     // Warning: This causes clicking on output
     //add_alarm_in_us(repeat_us, alarm_callback, (void*)&repeat_us, false);  // start timer for stream LED blanking
@@ -289,32 +276,31 @@ int main()
 #endif
 
     // discard first 200 samples
-    for(int count=0; count<200; count++)  sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);    // get frame word from Ultranet FIFO
+    //for(int count=0; count<200; count++)  sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);    // get frame word from Ultranet FIFO
 
 #ifdef DEBUG
     analyse_samples();
 #endif
+
+    reset_stats();
 
     while (true)
     {
         // get next ultranet frame
         sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);
         channel = sample_channel(sample);
-        total++;
+        samples_received++;
         if (channel < 0) {
-            dropped++;
-            led_state = 0x0;
+            samples_d[0]++;
+            samples_d[channel*-1]++;
         } else {
             // move 22 bits of audio into MSBs
+            samples_c[channel]++;
             samples[channel] = (int32_t)((sample << 4) & 0xFFFFFC00);
-            led_state = 0xFFFFFFFF;
         }
 
-#ifdef LOGGING
-        if(total % 5000000 == 0) {
-            printf("Dropped: %lu/%lu [%0.3f%%]\n", dropped, total, dropped*100.0/total);
-            dropped = total = 0;
+        if(samples_received == 384000) {
+            reset_stats();
         }
-#endif
     }
 }
