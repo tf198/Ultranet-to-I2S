@@ -32,7 +32,7 @@
 #define VERSION "1.2"
 
 // conditional compilation switches for hardware options
-#define DEBUG                    // enable debug code DEBUG DEBUG DEBUG
+//#define DEBUG                    // enable debug code DEBUG DEBUG DEBUG
 #define LOGGING
 #define MCLK                        // Enable MCLK clock for I2S devices
 
@@ -57,9 +57,9 @@
 // I2S outputs use second pio (pio1), four I2S outputs, 3 pins each
 #define I2S_PIO pio1                // PIO 1 is dedicated to I2S outputs (all 4 SMs)
 #define I2S1_PINS 6                 // base for I2S output pins (3 pins starting point)
-#define I2S2_PINS 9                 // base for I2S output pins (3 pins starting point)
-#define I2S3_PINS 12                 // base for I2S output pins (3 pins starting point)
-#define I2S4_PINS 15                // base for I2S output pins (3 pins starting point)
+#define I2S2_PINS 10                // base for I2S output pins (3 pins starting point)
+//#define I2S3_PINS 12                 // base for I2S output pins (3 pins starting point)
+//#define I2S4_PINS 15                // base for I2S output pins (3 pins starting point)
 // Selector binary switch (3 pole)
 #define SELECTOR_SW_BASE 5         // base pin (switch is 3-pin, base+2) switches to ground
 #define SW_COMM_LOW                 // switch common pin(s) are connected to 0v

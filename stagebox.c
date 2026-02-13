@@ -1,6 +1,6 @@
 #include "ultranet.h"
 #include "pico/multicore.h"
-#include "pico/cyw43_arch.h"
+//#include "pico/cyw43_arch.h"
 
 int main()
 {
@@ -22,7 +22,7 @@ int main()
 #endif // DEBUG
 
     ultranet_gpio_init();                                   // initialise required GPIO pins
-    cyw43_arch_init(); // TODO: Figure out how to get rid of this
+    //cyw43_arch_init(); // TODO: Figure out how to get rid of this
 
     selector = get_selector();                              // read selector switch once at boot time
 #ifdef LOGGING
@@ -37,6 +37,7 @@ int main()
 
     // start DMA transfer of memory address to i2s
     i2s_connect_channels(I2S_PIO, 0, I2S1_PINS, &samples[0]);
+    i2s_connect_channels(I2S_PIO, 1, I2S2_PINS, &samples[2]);
 
 
     sleep_ms(100);                                          // wait for core1 to start

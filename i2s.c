@@ -49,7 +49,7 @@ uint32_t dma_init(PIO pio, uint sm, volatile uint32_t* target) {
 
 void i2s_connect_channels(PIO pio, uint sm, uint pins, volatile uint32_t* target) {
     int i2s_offset = pio_add_program(pio, &i2s_program);    // load i2c output code once for all state machines
-    i2s_pio_init(pio, sm, I2S1_PINS, i2s_offset);        // all 4 state machines use the same code
+    i2s_pio_init(pio, sm, pins, i2s_offset);        // all 4 state machines use the same code
 
     uint32_t pio_dma_chan = dma_init(pio, sm, target);
 
