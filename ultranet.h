@@ -45,7 +45,7 @@
 // Ultranet input and MCLK state machines use pio0
 #define UNETL_PIN 2                 // ultranet low stream (1-8) input pin
 #define UNETH_PIN 3                 // ultranet high stream (9-16) input pin
-#define UNET_PIN UNETL_PIN          // ultranet default input pin
+#define UNET_PIN UNETH_PIN          // ultranet default input pin
 #define UNET_PIO pio0               // PIO module to use for Ultranet input
 #define UNET_SM 0                   // state machine to use for Ultranet input
 #define UNET_DISCARD 1000000        // discard this many samples to sync
@@ -77,6 +77,7 @@
 
 // these need to be "volatile" otherwise the compiler optimises them out!
 extern volatile int32_t samples[8]; // array of samples read from Ultranet stream
+extern char ultranet_status[200];
 
 extern void ultranet_gpio_init(void);           // setup gpio for selector
 extern void ultranet_pio_init(PIO, uint, uint); // setup state machine to decode frames

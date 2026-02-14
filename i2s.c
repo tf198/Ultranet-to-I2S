@@ -15,7 +15,8 @@ void i2s_pio_init(PIO pio, uint sm, uint pin, uint offset)
     pio_gpio_init(pio, pin+1);
     pio_gpio_init(pio, pin+2);
     pio_sm_set_consecutive_pindirs(pio, sm, pin, 3, true);  // set base+3 pins to output
-    sm_config_set_clkdiv_int_frac8(&c, div, frac);          // set frequency of UNET_SM to fs x 256
+    //sm_config_set_clkdiv_int_frac8(&c, div, frac);          // set frequency of UNET_SM to fs x 256
+    sm_config_set_clkdiv(&c, 7);
     sm_config_set_out_pins (&c, pin, 3);                    // out pin range base and count
     sm_config_set_sideset_pins (&c, pin+1);                 // sideset pin range base
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);          // configure 8 depth output fifo

@@ -54,7 +54,8 @@ int main()
     
     while(true) {
         sleep_ms(1000);
-        printf("Dropped: %0.2f%% \n", ultranet_samples_dropped*100);
+        puts(ultranet_status);
+        //printf("Dropped: %0.2f%% \n", ultranet_samples_dropped*100);
     }
 
 }

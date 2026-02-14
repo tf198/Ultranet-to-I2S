@@ -45,6 +45,7 @@ uint32_t samples_d[5] = {0};
 uint64_t samples_ts = 0;
 volatile uint32_t ultranet_samples_received = 0;
 volatile float ultranet_samples_dropped = 0;
+char ultranet_status[200];
 
 void ultranet_gpio_init(void)
 {
@@ -150,14 +151,15 @@ void reset_stats() {
     samples_ts = time_us_64();
 }
 
-void ultranet_print_stats() {
+void ultranet_generate_stats() {
     for (int i=0; i<8; i++) {
-        printf("%2d: %-6lu ", i, samples_c[i]);
+        sprintf(&ultranet_status[i*10], "%2d: %-6lu ", i, samples_c[i]);
     }
+    //sprintf(&ultranet_status[70], " | ");
     for (int i=1; i<5; i++) {
-        printf("%2d: %-6lu ", i*-1, samples_d[i]);
+        sprintf(&ultranet_status[70+i*10], "%2d: %-6lu ", i*-1, samples_d[i]);
     }
-    printf("X: %-7lu (%f%%) [%luns]\n", ultranet_samples_received, samples_d[0]*100.0/ultranet_samples_received, time_us_64()-samples_ts-1000000);
+    sprintf(&ultranet_status[121], "(%f%%) [%luns]", samples_d[0]*100.0/ultranet_samples_received, time_us_64()-samples_ts-1000000);
     reset_stats();
 }
 
@@ -259,7 +261,8 @@ void ultranet_decode_forever()
         }
 
         if(ultranet_samples_received == 384000) {
-            reset_stats();
+            ultranet_generate_stats();
+            //puts(ultranet_status);
         }
     }
 }
