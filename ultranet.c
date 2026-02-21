@@ -36,31 +36,6 @@ static const uint32_t SYNC_B = 0b1111;
 static const uint32_t SYNC_M = 0b1011;
 static const uint32_t SYNC_W = 0b0111;
 
-// array for raw ultranet samples
-// need to align so we can use the DMA ring buffer
-volatile int32_t samples[8] __attribute__((aligned(2*sizeof(int32_t))));   // array of samples read from Ultranet stream
-
-uint32_t samples_c[8] = {0};
-uint32_t samples_d[5] = {0};
-uint64_t samples_ts = 0;
-volatile uint32_t ultranet_samples_received = 0;
-volatile float ultranet_samples_dropped = 0;
-char ultranet_status[200];
-
-void ultranet_gpio_init(void)
-{
-    int count;
-    for(count=SELECTOR_SW_BASE; count < (SELECTOR_SW_BASE+3);count++)
-    {
-        gpio_init(count);
-#ifdef SW_COMM_LOW                                          // switch common can be 0v or +3.3v
-        gpio_pull_up(count);                                // for switch common to +3.3v
-#else
-        gpio_pull_down(count);                              // for switch common to +3.3v
-#endif // SW_COMM_LOW
-    }
-}
-
 // state machine init functions (used to be defined in <prog>.pio file)
 void ultranet_pio_init(PIO pio, uint sm, uint pin)
 {
@@ -70,34 +45,16 @@ void ultranet_pio_init(PIO pio, uint sm, uint pin)
     uint offset = pio_add_program(pio, &ultranet_program);  // load code into pio mem
     pio_sm_config c = ultranet_program_get_default_config(offset);  // get default structure
 
-    //const uint32_t div_int = 1; //SPDIF_RX_SYS_CLK_FREQ / SPDIF_RX_PIO_CLK_FREQ;
-    //const uint8_t  div_frac8 = (uint8_t) (((uint64_t) SPDIF_RX_SYS_CLK_FREQ * 256) / SPDIF_RX_PIO_CLK_FREQ - 256);
-    //printf("Set fractional scaling: %d/%d\n", div_int, div_frac8);
-    //sm_config_set_clkdiv(&c, 150000000.0/147456000.0);
+    //sm_config_set_clkdiv(&c, 150000000.0/147456000.0);    // no need to set fractional scaling if running at 172MHz
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);          // configure 8 depth input fifo
     sm_config_set_in_pins (&c, pin);                        // input pin range base
     sm_config_set_in_shift(&c, true, false, 32);            // shift_right, no autopush, 32bit
     pio_sm_init(pio, sm, offset, &c);                       // apply structure to state machine
     pio_gpio_init(pio, pin);  
-    pio_sm_set_jmp_pin(pio, UNET_SM, pin);                  // specify pin for jmp instructions
+    pio_sm_set_jmp_pin(pio, sm, pin);                  // specify pin for jmp instructions
     pio_sm_set_enabled(pio, sm, true);                      // start state machine running
 }
 
-// Embedded binary information (for picotool interrogation of programmed device)
-void set_binary_info(void)
-{
-    bi_decl(bi_program_description(DESCRIPTION));           // Description field for embedded identification 
-    bi_decl(bi_program_version_string(VERSION));            // Version field for embedded identification
-#ifdef UNETH_PIN
-    bi_decl(bi_2pins_with_names(UNETL_PIN, "Ultranet Low (1-8) Stream Input", UNETH_PIN, "Ultranet High (9-16) Input"));
-#else
-    bi_decl(bi_1pin_with_name(UNET_PIN, "Ultranet Stream Input"));
-#endif // UNETH_PIN
-#ifdef MCLK
-    bi_decl(bi_1pin_with_name(MCLK_PIN, "I2S MCLK Output"));
-#endif // MCLK
-    //set_core1_info();                                       // info for pins used by core1
-}
 
 /**
  * Count number of bits set in a 32bit integer.
@@ -142,25 +99,29 @@ int8_t sample_channel(uint32_t sample) {
     }
 }
 
-void reset_stats() {
-    ultranet_samples_dropped = (float)samples_d[0]/ultranet_samples_received; // TODO - rolling average
-
-    memset((void*)samples_c, 0, 8*sizeof(uint32_t));
-    memset((void*)samples_d, 0, 5*sizeof(uint32_t));
-    ultranet_samples_received = 0;
-    samples_ts = time_us_64();
+void reset_stats(struct UltranetStream *stream) {
+    memset((void*)stream->received, 0, 16*sizeof(uint32_t));
+    memset((void*)stream->errors  , 0, 5*sizeof(uint32_t));
+    stream->start_ts = time_us_64();
 }
 
-void ultranet_generate_stats() {
+void ultranet_generate_stats(struct UltranetStream *stream) {
+    char buffer[100];
+
+    sprintf(stream->status, "|");
     for (int i=0; i<8; i++) {
-        sprintf(&ultranet_status[i*10], "%2d: %-6lu ", i, samples_c[i]);
+        sprintf(buffer, " %2d: %-3lu", i, 48000-stream->received[i]);
+        strcat(stream->status, buffer);
     }
     //sprintf(&ultranet_status[70], " | ");
+    strcat(stream->status, " |");
     for (int i=1; i<5; i++) {
-        sprintf(&ultranet_status[70+i*10], "%2d: %-6lu ", i*-1, samples_d[i]);
+        sprintf(buffer, " %2d: %-3lu", i*-1, stream->errors[i]);
+        strcat(stream->status, buffer);
     }
-    sprintf(&ultranet_status[121], "(%f%%) [%luns]", samples_d[0]*100.0/ultranet_samples_received, time_us_64()-samples_ts-1000000);
-    reset_stats();
+    sprintf(buffer, "| %5.3f%% | %4dns |", stream->errors[0]*100.0/384000, time_us_64()-stream->start_ts-1000000);
+    strcat(stream->status, buffer);
+    reset_stats(stream);
 }
 
 void print_sample(uint32_t sample) {
@@ -174,95 +135,48 @@ void print_sample(uint32_t sample) {
     printf("\n");
 }
 
-void ultranet_dump_samples() {
-    uint32_t test_samples[500];
+void ultranet_dump_samples(int count, PIO pio, uint sm) {
+    uint32_t *test_samples = (uint32_t *)malloc(count * sizeof(uint32_t));
 
     // dump some samples so we can see what we are dealing with
-    for (int i=0; i<500; i++) {
-        test_samples[i] = pio_sm_get_blocking(UNET_PIO, UNET_SM);
+    for (int i=0; i<count; i++) {
+        test_samples[i] = pio_sm_get_blocking(pio, sm);
     }
-    for (int i=0; i<500; i++) {
+    for (int i=0; i<count; i++) {
         print_sample(test_samples[i]);
     }
+    free(test_samples);
 }
 
-void ultranet_analyse_samples() {
-    volatile uint32_t sample;
-    int8_t c;
 
-    reset_stats();
-    while(true) {
-        sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);
-        c = sample_channel(sample);
-        ultranet_samples_received++;
-        if (c < 0) {
-            samples_d[0]++;
-            samples_d[c*-1]++;
-            //print_sample(sample);
-        } else {
-            samples_c[c]++;
-        }
 
-        
-        if (ultranet_samples_received == 384000) {
-            ultranet_print_stats();
-        }
-    }
-}
-
-#ifdef TEST_SIGNAL
-int32_t* generate_test_signal(uint16_t length, uint16_t bitrate) {
-
-    int32_t* sinewave = (int32_t*)malloc(length * sizeof(int32_t));
-    int32_t max_int = 0x0FFFFFFF;
-
-    double m = (M_PI * 2) / (double)length;
-    double v;
-    for (int i=0; i<length; i++) {
-        v = sin(i * m);
-        sinewave[i] = (int)(v * max_int);
-    }
-    return sinewave;
-}
-#endif
-
-// read selector switch and return uint with switch positions in the 3 LSBs
-uint get_selector(void)
-{
-    static uint sw_mask = 0b111 << SELECTOR_SW_BASE;        // Mask for selecting only switch bits from all GPIOs
-
-#ifdef SW_COMM_LOW                                          // sw pulls gpio pins low, so invert sw result
-    return ((~gpio_get_all()) & sw_mask) >> SELECTOR_SW_BASE;
-#else                                                       // sw pulls gpio pins high, so non-inverted result
-    return (gpio_get_all() & sw_mask) >> SELECTOR_SW_BASE;
-#endif // SW_COMM_LOW
-}
-
-void ultranet_decode_forever()
+void ultranet_decode_forever(struct UltranetStream *stream, PIO pio, uint sm)
 {
     volatile uint32_t sample;                               // temp store for sample read from Ultranet stream
     int8_t channel;
 
-    reset_stats();
+    uint32_t samples_received = 0;
+
+    reset_stats(stream);
 
     while (true)
     {
         // get next ultranet frame
-        sample = pio_sm_get_blocking(UNET_PIO, UNET_SM);
+        sample = pio_sm_get_blocking(pio, sm);
         channel = sample_channel(sample);
-        ultranet_samples_received++;
+        samples_received++;
         if (channel < 0) {
-            samples_d[0]++;
-            samples_d[channel*-1]++;
+            stream->errors[0]++;
+            stream->errors[channel*-1]++;
         } else {
             // move 22 bits of audio into MSBs
-            samples_c[channel]++;
-            samples[channel] = (int32_t)((sample << 4) & 0xFFFFFC00);
+            stream->received[channel]++;
+            stream->samples[channel] = (int32_t)((sample << 4) & 0xFFFFFC00);
         }
 
-        if(ultranet_samples_received == 384000) {
-            ultranet_generate_stats();
-            //puts(ultranet_status);
+        if(samples_received == 384000) {
+            ultranet_generate_stats(stream);
+            samples_received = 0;
         }
     }
 }

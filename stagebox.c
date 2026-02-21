@@ -1,12 +1,102 @@
 #include "ultranet.h"
 #include "pico/multicore.h"
-//#include "pico/cyw43_arch.h"
+
+
+// strings for inclusion in binary info (for query by picotool)
+#define DESCRIPTION "Single Ultranet stream input (sw selected), 4xI2S stereo, 8xPWM mono"
+#define VERSION "1.2"
+
+// conditional compilation switches for hardware options
+//#define DEBUG                    // enable debug code DEBUG DEBUG DEBUG
+#define LOGGING
+
+// Selector binary switch (3 pole)
+// #define SW_COMM_HIGH             // switch common pin(s) are connected to 3.3v
+#define SELECTOR_SW_BASE 5         // base pin (switch is 3-pin, base+2) switches to ground
+#define SW_COMM_LOW                 // switch common pin(s) are connected to 0v
+
+// Ultranet input and MCLK state machines use pio0
+#define UNETL_PIN 2                 // ultranet low stream (1-8) input pin
+#define UNETH_PIN 3                 // ultranet high stream (9-16) input pin
+#define UNET_PIN UNETH_PIN          // ultranet default input pin
+#define UNET_PIO pio0               // PIO module to use for Ultranet input
+#define UNET_SM 0                   // state machine to use for Ultranet input
+
+#define I2S_PIO pio1                // PIO 1 is dedicated to I2S outputs (all 4 SMs)
+#define I2S1_PINS 6                 // base for I2S output pins (3 pins starting point)
+#define I2S2_PINS 10                // base for I2S output pins (3 pins starting point)
+//#define I2S3_PINS 12                 // base for I2S output pins (3 pins starting point)
+//#define I2S4_PINS 15                // base for I2S output pins (3 pins starting point)
+
+volatile struct UltranetStream stream; // __attribute__((aligned(2*sizeof(int32_t))));
+
+// Embedded binary information (for picotool interrogation of programmed device)
+void set_binary_info(void)
+{
+    bi_decl(bi_program_description(DESCRIPTION));           // Description field for embedded identification 
+    bi_decl(bi_program_version_string(VERSION));            // Version field for embedded identification
+#ifdef UNETH_PIN
+    bi_decl(bi_2pins_with_names(UNETL_PIN, "Ultranet Low (1-8) Stream Input", UNETH_PIN, "Ultranet High (9-16) Input"));
+#else
+    bi_decl(bi_1pin_with_name(UNET_PIN, "Ultranet Stream Input"));
+#endif // UNETH_PIN
+#ifdef MCLK
+    bi_decl(bi_1pin_with_name(MCLK_PIN, "I2S MCLK Output"));
+#endif // MCLK
+    //set_core1_info();                                       // info for pins used by core1
+}
+
+void stagebox_gpio_init(void)
+{
+    int count;
+    for(count=SELECTOR_SW_BASE; count < (SELECTOR_SW_BASE+3);count++)
+    {
+        gpio_init(count);
+#ifdef SW_COMM_LOW                                          // switch common can be 0v or +3.3v
+        gpio_pull_up(count);                                // for switch common to +3.3v
+#else
+        gpio_pull_down(count);                              // for switch common to +3.3v
+#endif // SW_COMM_LOW
+    }
+}
+
+// read selector switch and return uint with switch positions in the 3 LSBs
+uint get_selector(void)
+{
+    static uint sw_mask = 0b111 << SELECTOR_SW_BASE;        // Mask for selecting only switch bits from all GPIOs
+
+#ifdef SW_COMM_LOW                                          // sw pulls gpio pins low, so invert sw result
+    return ((~gpio_get_all()) & sw_mask) >> SELECTOR_SW_BASE;
+#else                                                       // sw pulls gpio pins high, so non-inverted result
+    return (gpio_get_all() & sw_mask) >> SELECTOR_SW_BASE;
+#endif // SW_COMM_LOW
+}
+
+#ifdef TEST_SIGNAL
+int32_t* generate_test_signal(uint16_t length, uint16_t bitrate) {
+
+    int32_t* sinewave = (int32_t*)malloc(length * sizeof(int32_t));
+    int32_t max_int = 0x0FFFFFFF;
+
+    double m = (M_PI * 2) / (double)length;
+    double v;
+    for (int i=0; i<length; i++) {
+        v = sin(i * m);
+        sinewave[i] = (int)(v * max_int);
+    }
+    return sinewave;
+}
+#endif
+
+void core1_entry() {
+    ultranet_decode_forever((struct UltranetStream *)&stream, UNET_PIO, UNET_SM);
+}
 
 int main()
 {
     uint selector;
 
-    //set_binary_info();                                      // info for querying by picotool                                    // initialise SDK libraries and interfaces
+    set_binary_info();                                      // info for querying by picotool                                    // initialise SDK libraries and interfaces
     if (CLOCKSPEED != 150000) {
         if (!set_sys_clock_khz(CLOCKSPEED,true)) {
             printf("Failed to set clock\n");
@@ -14,15 +104,9 @@ int main()
         };
     }
     stdio_init_all();   
-
-#ifdef DEBUG
-    sleep_ms(5000);                                         // allow time for USB serial to connect
-#else
     sleep_ms(1000);                                          // allow time for clocks etc. to settle
-#endif // DEBUG
 
-    ultranet_gpio_init();                                   // initialise required GPIO pins
-    //cyw43_arch_init(); // TODO: Figure out how to get rid of this
+    stagebox_gpio_init();                                   // initialise required GPIO pins
 
     selector = get_selector();                              // read selector switch once at boot time
 #ifdef LOGGING
@@ -35,26 +119,35 @@ int main()
     else
         ultranet_pio_init(UNET_PIO, UNET_SM, UNETL_PIN);    // initialise and start ultranet state machine
 
+    int ch_offset = 0;
+
     // start DMA transfer of memory address to i2s
-    i2s_connect_channels(I2S_PIO, 0, I2S1_PINS, &samples[0]);
-    i2s_connect_channels(I2S_PIO, 1, I2S2_PINS, &samples[2]);
-
-
-    sleep_ms(100);                                          // wait for core1 to start
-#ifdef LOGGING
-    puts("FINISHED setting everything up\n");
+    i2s_connect_channels(I2S_PIO, 0, I2S1_PINS, &(stream.samples[ch_offset]));
+    i2s_connect_channels(I2S_PIO, 1, I2S2_PINS, &(stream.samples[ch_offset+2]));
+#ifdef I2S3_PINS
+    i2s_connect_channels(I2S_PIO, 1, I2S3_PINS, &(stream.samples[ch_offset+4]));
+#endif
+#ifdef I2S4_PINS
+    i2s_connect_channels(I2S_PIO, 1, I2S4_PINS, &(stream.samples[ch_offset+6]));
 #endif
 
 
 #ifdef DEBUG
-    ultranet_analyse_samples();
+    ultranet_dump_samples(500, UNET_PIO, UNET_SM);
+    return 0;
 #endif
 
-    multicore_launch_core1(ultranet_decode_forever);
+    multicore_launch_core1(core1_entry);
+    sleep_ms(100);                                          // wait for core1 to start
+#ifdef LOGGING
+    puts("FINISHED setting everything up\n");
+#endif
     
     while(true) {
         sleep_ms(1000);
-        puts(ultranet_status);
+        #ifdef LOGGING
+        puts((char*)stream.status);
+        #endif
         //printf("Dropped: %0.2f%% \n", ultranet_samples_dropped*100);
     }
 
