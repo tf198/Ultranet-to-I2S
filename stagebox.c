@@ -54,6 +54,7 @@ void stagebox_gpio_init(void)
 {
     for(int i=0; i<2; i++) {
         gpio_init(SELECTOR_SW_BASE+i);
+        gpio_set_dir(SELECTOR_SW_BASE+i, false);
 #ifdef SW_COMM_LOW                                          // switch common can be 0v or +3.3v
         gpio_pull_up(SELECTOR_SW_BASE+i);                                // for switch common to +3.3v
 #else
@@ -68,6 +69,7 @@ uint get_selector(void)
     static uint sw_mask = 0b11 << SELECTOR_SW_BASE;        // Mask for selecting only switch bits from all GPIOs
 
     printf("Switch: %d %d\n", gpio_get(SELECTOR_SW_BASE), gpio_get(SELECTOR_SW_BASE+1));
+    return 0;
 
     printf("%x\n", gpio_get_all());
 #ifdef SW_COMM_LOW                                          // sw pulls gpio pins low, so invert sw result
@@ -111,9 +113,9 @@ int main()
     stdio_init_all();   
     sleep_ms(1000);                                          // allow time for clocks etc. to settle
 
-    //stagebox_gpio_init();                                   // initialise required GPIO pins
+    stagebox_gpio_init();                                   // initialise required GPIO pins
 
-    selector = 0; //get_selector();                              // read selector switch once at boot time
+    selector = get_selector();                              // read selector switch once at boot time
     
     printf("Clock: %dkhz (%d,%d)\n", clock_get_hz(clk_sys)/1000, ultranet_cy, ultranet_mp);
     printf("Selector = %d\n", selector);
@@ -125,18 +127,18 @@ int main()
 
     stream = ultranet_init(UNET_PIO);
 
-    if(selector & 0b01) {                                   // Most significant switch bit selects Ultranet input stream pin
-        printf("Selected channels 9-16\n");
-        //ultranet_pio_init(UNET_PIO, UNET_SM, UNETH_PIN);    // initialise and start ultranet state machine
+    int base_ch = 1;
+    if(!gpio_get(SELECTOR_SW_BASE)) {                                   // Most significant switch bit selects Ultranet input stream pin
+        printf("Selected stream 9-16\n");
         ultranet_sm_init(stream, UNETH_PIN);
+        base_ch = 9;
     } else {
-        printf("Selected channels 1-8\n");
-        //ultranet_pio_init(UNET_PIO, UNET_SM, UNETL_PIN);    // initialise and start ultranet state machine
+        printf("Selected stream 1-8\n");
         ultranet_sm_init(stream, UNETL_PIN);
     }
 
-    int ch_offset = (selector & 0b10) ? 4 : 0;
-    printf("Channels: %d-%d\n", ch_offset, ch_offset+4);
+    int ch_offset = (!gpio_get(SELECTOR_SW_BASE+1)) ? 4 : 0;
+    printf("Channels: %d-%d\n", base_ch+ch_offset, base_ch+ch_offset+3);
 
     // start DMA transfer of memory address to i2s
     uint i2s_offset = i2s_pio_init(I2S_PIO);
