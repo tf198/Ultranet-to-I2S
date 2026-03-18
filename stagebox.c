@@ -8,12 +8,15 @@
 
 // conditional compilation switches for hardware options
 //#define DEBUG                    // enable debug code DEBUG DEBUG DEBUG
-#define LOGGING
+//#define LOGGING
 
 // Selector binary switch (3 pole)
 // #define SW_COMM_HIGH             // switch common pin(s) are connected to 3.3v
-#define SELECTOR_SW_BASE 5         // base pin (switch is 3-pin, base+2) switches to ground
+#define SELECTOR_SW_BASE 12         // base pin (switch is 3-pin, base+2) switches to ground
 #define SW_COMM_LOW                 // switch common pin(s) are connected to 0v
+
+#define LED_ORANGE 14
+#define LED_GREEN 15
 
 // Ultranet input and MCLK state machines use pio0
 #define UNETL_PIN 2                 // ultranet low stream (1-8) input pin
@@ -23,12 +26,13 @@
 #define UNET_SM 0                   // state machine to use for Ultranet input
 
 #define I2S_PIO pio1                // PIO 1 is dedicated to I2S outputs (all 4 SMs)
-#define I2S1_PINS 6                 // base for I2S output pins (3 pins starting point)
-#define I2S2_PINS 10                // base for I2S output pins (3 pins starting point)
+#define I2S1_PINS 4                 // base for I2S output pins (3 pins starting point)
+#define I2S2_PINS 7                // base for I2S output pins (3 pins starting point)
 //#define I2S3_PINS 12                 // base for I2S output pins (3 pins starting point)
 //#define I2S4_PINS 15                // base for I2S output pins (3 pins starting point)
 
-volatile struct UltranetStream stream; // __attribute__((aligned(2*sizeof(int32_t))));
+volatile struct UltranetStream *stream; // __attribute__((aligned(2*sizeof(int32_t))));
+volatile int32_t samples[16] __attribute__((aligned(2*sizeof(int32_t))));
 
 // Embedded binary information (for picotool interrogation of programmed device)
 void set_binary_info(void)
@@ -48,14 +52,12 @@ void set_binary_info(void)
 
 void stagebox_gpio_init(void)
 {
-    int count;
-    for(count=SELECTOR_SW_BASE; count < (SELECTOR_SW_BASE+3);count++)
-    {
-        gpio_init(count);
+    for(int i=0; i<2; i++) {
+        gpio_init(SELECTOR_SW_BASE+i);
 #ifdef SW_COMM_LOW                                          // switch common can be 0v or +3.3v
-        gpio_pull_up(count);                                // for switch common to +3.3v
+        gpio_pull_up(SELECTOR_SW_BASE+i);                                // for switch common to +3.3v
 #else
-        gpio_pull_down(count);                              // for switch common to +3.3v
+        gpio_pull_down(SELECTOR_SW_BASE+i);                              // for switch common to +3.3v
 #endif // SW_COMM_LOW
     }
 }
@@ -63,8 +65,9 @@ void stagebox_gpio_init(void)
 // read selector switch and return uint with switch positions in the 3 LSBs
 uint get_selector(void)
 {
-    static uint sw_mask = 0b111 << SELECTOR_SW_BASE;        // Mask for selecting only switch bits from all GPIOs
+    static uint sw_mask = 0b11 << SELECTOR_SW_BASE;        // Mask for selecting only switch bits from all GPIOs
 
+    printf("%x\n", gpio_get_all());
 #ifdef SW_COMM_LOW                                          // sw pulls gpio pins low, so invert sw result
     return ((~gpio_get_all()) & sw_mask) >> SELECTOR_SW_BASE;
 #else                                                       // sw pulls gpio pins high, so non-inverted result
@@ -89,7 +92,7 @@ int32_t* generate_test_signal(uint16_t length, uint16_t bitrate) {
 #endif
 
 void core1_entry() {
-    ultranet_decode_forever((struct UltranetStream *)&stream, UNET_PIO, UNET_SM);
+    ultranet_decode_forever(stream, samples);
 }
 
 int main()
@@ -106,24 +109,37 @@ int main()
     stdio_init_all();   
     sleep_ms(1000);                                          // allow time for clocks etc. to settle
 
-    stagebox_gpio_init();                                   // initialise required GPIO pins
+    //stagebox_gpio_init();                                   // initialise required GPIO pins
 
-    selector = get_selector();                              // read selector switch once at boot time
-#ifdef LOGGING
+    selector = 0; //get_selector();                              // read selector switch once at boot time
+    
     printf("Clock: %dkhz (%d,%d)\n", clock_get_hz(clk_sys)/1000, ultranet_cy, ultranet_mp);
     printf("Selector = %d\n", selector);
-#endif
 
-    if(selector & 0b100)                                    // Most significant switch bit selects Ultranet input stream pin
-        ultranet_pio_init(UNET_PIO, UNET_SM, UNETH_PIN);    // initialise and start ultranet state machine
-    else
-        ultranet_pio_init(UNET_PIO, UNET_SM, UNETL_PIN);    // initialise and start ultranet state machine
+    gpio_init(LED_ORANGE);
+    gpio_set_dir(LED_ORANGE, GPIO_OUT);
+    gpio_init(LED_GREEN);
+    gpio_set_dir(LED_GREEN, GPIO_OUT);
 
-    int ch_offset = 0;
+    stream = ultranet_init(UNET_PIO);
+
+    if(selector & 0b01) {                                   // Most significant switch bit selects Ultranet input stream pin
+        printf("Selected channels 9-16\n");
+        //ultranet_pio_init(UNET_PIO, UNET_SM, UNETH_PIN);    // initialise and start ultranet state machine
+        ultranet_sm_init(stream, UNETH_PIN);
+    } else {
+        printf("Selected channels 1-8\n");
+        //ultranet_pio_init(UNET_PIO, UNET_SM, UNETL_PIN);    // initialise and start ultranet state machine
+        ultranet_sm_init(stream, UNETL_PIN);
+    }
+
+    int ch_offset = (selector & 0b10) ? 4 : 0;
+    printf("Channels: %d-%d\n", ch_offset, ch_offset+4);
 
     // start DMA transfer of memory address to i2s
-    i2s_connect_channels(I2S_PIO, 0, I2S1_PINS, &(stream.samples[ch_offset]));
-    i2s_connect_channels(I2S_PIO, 1, I2S2_PINS, &(stream.samples[ch_offset+2]));
+    uint i2s_offset = i2s_pio_init(I2S_PIO);
+    i2s_connect_channels(I2S_PIO, i2s_offset, 0, I2S1_PINS, &samples[ch_offset]);
+    i2s_connect_channels(I2S_PIO, i2s_offset, 1, I2S2_PINS, &samples[ch_offset+2]);
 #ifdef I2S3_PINS
     i2s_connect_channels(I2S_PIO, 1, I2S3_PINS, &(stream.samples[ch_offset+4]));
 #endif
@@ -133,22 +149,23 @@ int main()
 
 
 #ifdef DEBUG
-    ultranet_dump_samples(500, UNET_PIO, UNET_SM);
-    return 0;
+    ultranet_dump_samples(20, stream);
 #endif
 
+    puts("Starting decoder");
     multicore_launch_core1(core1_entry);
     sleep_ms(100);                                          // wait for core1 to start
-#ifdef LOGGING
     puts("FINISHED setting everything up\n");
-#endif
+    gpio_put(LED_GREEN, true);
     
     while(true) {
-        sleep_ms(1000);
+        sleep_ms(750);
+        gpio_put(LED_ORANGE, true);
+        sleep_ms(250);
+        gpio_put(LED_ORANGE, false);
         #ifdef LOGGING
-        puts((char*)stream.status);
+        puts((char*)stream->status);
         #endif
-        //printf("Dropped: %0.2f%% \n", ultranet_samples_dropped*100);
     }
 
 }

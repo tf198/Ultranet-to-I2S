@@ -2,8 +2,7 @@
 #include "ultranet.h"
 #include "hardware/dma.h"
 
-void i2s_pio_init(PIO pio, uint sm, uint pin, uint offset)
-{
+uint i2s_pio_init(PIO pio) {
     /*
     uint32_t clk = clock_get_hz(clk_sys);
     float ratio = clk/24576000.0;
@@ -12,6 +11,11 @@ void i2s_pio_init(PIO pio, uint sm, uint pin, uint offset)
     uint frac = ratio*256;
     printf("Clock: %d [%f] -> %d %d\n", clk, ratio, div, frac);
     */
+    return pio_add_program(pio, &i2s_program);    // load i2c output code once for all state machines 
+}
+
+void i2s_sm_init(PIO pio, uint offset, uint sm, uint pin)
+{
 
     pio_sm_config c = i2s_program_get_default_config(offset);  // get default structure
     pio_gpio_init(pio, pin);
@@ -50,11 +54,10 @@ uint32_t dma_init(PIO pio, uint sm, volatile uint32_t* target) {
     return pio_dma_chan;
 }
 
-void i2s_connect_channels(PIO pio, uint sm, uint pins, volatile uint32_t* target) {
-    int i2s_offset = pio_add_program(pio, &i2s_program);    // load i2c output code once for all state machines
-    i2s_pio_init(pio, sm, pins, i2s_offset);        // all 4 state machines use the same code
+void i2s_connect_channels(PIO pio, uint offset, uint sm, uint pins, volatile int32_t* target) {
+    i2s_sm_init(pio, offset, sm, pins);        
 
-    uint32_t pio_dma_chan = dma_init(pio, sm, target);
+    uint32_t pio_dma_chan = dma_init(pio, sm, (volatile uint32_t*)target);
 
     dma_channel_start(pio_dma_chan);
     pio_sm_set_enabled(pio, sm, true);

@@ -36,23 +36,35 @@ static const uint32_t SYNC_B = 0b1111;
 static const uint32_t SYNC_M = 0b1011;
 static const uint32_t SYNC_W = 0b0111;
 
+struct UltranetStream* ultranet_init(PIO pio) {
+  struct UltranetStream *result = malloc(sizeof(struct UltranetStream));
+  memset(result, 0, sizeof(struct UltranetStream));
+  result->pio = pio;
+  result->sm0 = 0;
+  result->sm_count = 0;
+  result->offset = pio_add_program(pio, &ultranet_program);
+  return result;
+}
+
 // state machine init functions (used to be defined in <prog>.pio file)
-void ultranet_pio_init(PIO pio, uint sm, uint pin)
+void ultranet_sm_init(volatile struct UltranetStream *stream, uint pin)
 {
+    uint sm = stream->sm0 + stream->sm_count;
     gpio_init(pin);
     gpio_set_dir(pin, GPIO_IN);                               // set ultranet pin as input
     gpio_set_pulls(pin, true, false);                       // set pullup on ultranet pin
-    uint offset = pio_add_program(pio, &ultranet_program);  // load code into pio mem
-    pio_sm_config c = ultranet_program_get_default_config(offset);  // get default structure
+    //int offset = pio_add_program(pio, &ultranet_program);  // load code into pio mem
+    pio_sm_config c = ultranet_program_get_default_config(stream->offset);  // get default structure
 
     //sm_config_set_clkdiv(&c, 150000000.0/147456000.0);    // no need to set fractional scaling if running at 172MHz
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);          // configure 8 depth input fifo
     sm_config_set_in_pins (&c, pin);                        // input pin range base
     sm_config_set_in_shift(&c, true, false, 32);            // shift_right, no autopush, 32bit
-    pio_sm_init(pio, sm, offset, &c);                       // apply structure to state machine
-    pio_gpio_init(pio, pin);  
-    pio_sm_set_jmp_pin(pio, sm, pin);                  // specify pin for jmp instructions
-    pio_sm_set_enabled(pio, sm, true);                      // start state machine running
+    pio_sm_init(stream->pio, sm, stream->offset, &c);                       // apply structure to state machine
+    pio_gpio_init(stream->pio, pin);  
+    pio_sm_set_jmp_pin(stream->pio, sm, pin);                       // specify pin for jmp instructions
+    pio_sm_set_enabled(stream->pio, sm, true);                      // start state machine running
+    stream->sm_count++;
 }
 
 
@@ -99,7 +111,7 @@ int8_t sample_channel(uint32_t sample) {
     }
 }
 
-void reset_stats(struct UltranetStream *stream) {
+void reset_stats(volatile struct UltranetStream *stream) {
     memset((void*)stream->received, 0, 16*sizeof(uint32_t));
     memset((void*)stream->errors  , 0, 5*sizeof(uint32_t));
     stream->start_ts = time_us_64();
@@ -109,8 +121,8 @@ void ultranet_generate_stats(struct UltranetStream *stream) {
     char buffer[100];
 
     sprintf(stream->status, "|");
-    for (int i=0; i<8; i++) {
-        sprintf(buffer, " %2d: %-3lu", i, 48000-stream->received[i]);
+    for (int i=0; i<16; i++) {
+        sprintf(buffer, " %-3d", 48000-stream->received[i]);
         strcat(stream->status, buffer);
     }
     //sprintf(&ultranet_status[70], " | ");
@@ -135,24 +147,27 @@ void print_sample(uint32_t sample) {
     printf("\n");
 }
 
-void ultranet_dump_samples(int count, PIO pio, uint sm) {
+void ultranet_dump_samples(int count, struct UltranetStream *stream) {
     uint32_t *test_samples = (uint32_t *)malloc(count * sizeof(uint32_t));
 
     // dump some samples so we can see what we are dealing with
-    for (int i=0; i<count; i++) {
-        test_samples[i] = pio_sm_get_blocking(pio, sm);
-    }
-    for (int i=0; i<count; i++) {
-        print_sample(test_samples[i]);
+    for (int sm=0; sm<stream->sm_count; sm++) {
+      printf("Stream %d\n", sm);
+      for (int i=0; i<count; i++) {
+          test_samples[i] = pio_sm_get_blocking(stream->pio, stream->sm0+sm);
+      }
+      for (int i=0; i<count; i++) {
+          print_sample(test_samples[i]);
+      }
     }
     free(test_samples);
 }
 
 
 
-void ultranet_decode_forever(struct UltranetStream *stream, PIO pio, uint sm)
+void ultranet_decode_forever(volatile struct UltranetStream *stream, volatile int32_t *samples)
 {
-    volatile uint32_t sample;                               // temp store for sample read from Ultranet stream
+    uint32_t sample;                               // temp store for sample read from Ultranet stream
     int8_t channel;
 
     uint32_t samples_received = 0;
@@ -162,7 +177,7 @@ void ultranet_decode_forever(struct UltranetStream *stream, PIO pio, uint sm)
     while (true)
     {
         // get next ultranet frame
-        sample = pio_sm_get_blocking(pio, sm);
+        sample = pio_sm_get_blocking(stream->pio, stream->sm0);
         channel = sample_channel(sample);
         samples_received++;
         if (channel < 0) {
@@ -171,11 +186,70 @@ void ultranet_decode_forever(struct UltranetStream *stream, PIO pio, uint sm)
         } else {
             // move 22 bits of audio into MSBs
             stream->received[channel]++;
-            stream->samples[channel] = (int32_t)((sample << 4) & 0xFFFFFC00);
+            samples[channel] = (int32_t)((sample << 4) & 0xFFFFFC00);
         }
 
         if(samples_received == 384000) {
-            ultranet_generate_stats(stream);
+            ultranet_generate_stats((struct UltranetStream*)stream);
+            samples_received = 0;
+        }
+    }
+}
+
+void ultranet_decode_and_mix(volatile struct UltranetStream *stream, volatile int32_t *samples, volatile float mixes[][16]) {
+
+    uint32_t sample;                               // temp store for sample read from Ultranet stream
+    int8_t channel;
+    int32_t audio;
+
+    uint32_t samples_received = 0;
+    uint bus_count = 4;
+
+    int64_t buses[4];
+    memset(buses, 0, 4*sizeof(int64_t));
+
+    reset_stats(stream);
+
+    while (true)
+    {
+        for(int sm=0; sm<stream->sm_count; sm++) {
+#ifdef DEBUG_PIN
+            gpio_put(DEBUG_PIN, 1);
+#endif
+            sample = pio_sm_get_blocking(stream->pio, stream->sm0+sm);
+#ifdef DEBUG_PIN
+            gpio_put(DEBUG_PIN, 0);
+#endif
+            channel = sample_channel(sample);
+            samples_received++;
+            if (channel < 0) {
+                stream->errors[0]++;
+                stream->errors[channel*-1]++;
+            } else {
+                channel += (8*sm);
+                stream->received[channel]++;
+                // move 22 bits of audio into MSBs
+                audio = (int32_t)((sample << 4) & 0xFFFFFC00);
+                //samples[channel] = (int32_t)(audio * mixes[0][channel]);
+                for(int i=0; i<bus_count; i++) {
+                  buses[i] += (int32_t)(audio * mixes[i][channel]);
+                }
+            }
+            
+            if(samples_received % 16 ==0) {
+              for(int i=0; i<bus_count; i++) {
+                //printf("%d ", buses[i]);
+                if (buses[i]>INT32_MAX) buses[i] = INT32_MAX;
+                if (buses[i]<INT32_MIN) buses[i] = INT32_MIN;
+                samples[i] = (int32_t) buses[i];
+              }
+              memset(buses, 0, 4*sizeof(int64_t));
+            }
+            
+        }
+
+        if(samples_received >= 768000) {
+            ultranet_generate_stats((struct UltranetStream*)stream);
             samples_received = 0;
         }
     }

@@ -33,7 +33,11 @@
 #define AUDIV ultranet_cy           // Audio divider for pio timing (from pio))
 
 struct UltranetStream {
-    int32_t samples[16] __attribute__((aligned(2*sizeof(int32_t))));
+    //int32_t samples[16] __attribute__((aligned(2*sizeof(int32_t))));
+    PIO pio;
+    uint offset;
+    uint sm0;
+    uint sm_count;
 
     uint32_t received[16];
     uint32_t errors[5];
@@ -41,9 +45,11 @@ struct UltranetStream {
     char status[200];
 };
 
-extern void ultranet_pio_init(PIO, uint, uint); // setup state machine to decode frames
-extern void ultranet_decode_forever(struct UltranetStream*, PIO, uint);      // starts decoding ultranet frames and writing them to samples array
-extern void ultranet_print_stats(void);
-extern void ultranet_dump_samples(int, PIO, uint);
+extern struct UltranetStream* ultranet_init(PIO);
+extern void ultranet_sm_init(volatile struct UltranetStream*, uint); // setup state machine to decode frames
+extern void ultranet_decode_forever(volatile struct UltranetStream*, volatile int32_t*);      // starts decoding ultranet frames and writing them to samples array
+extern void ultranet_decode_and_mix(volatile struct UltranetStream*, volatile int32_t*, volatile float[][16]);
+extern void ultranet_dump_samples(int, struct UltranetStream*);
 
-extern void i2s_connect_channels(PIO, uint, uint, volatile uint32_t*);
+extern uint i2s_pio_init(PIO);
+extern void i2s_connect_channels(PIO, uint, uint, uint, volatile int32_t*);
