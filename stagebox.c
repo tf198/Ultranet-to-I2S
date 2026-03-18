@@ -67,6 +67,8 @@ uint get_selector(void)
 {
     static uint sw_mask = 0b11 << SELECTOR_SW_BASE;        // Mask for selecting only switch bits from all GPIOs
 
+    printf("Switch: %d %d\n", gpio_get(SELECTOR_SW_BASE), gpio_get(SELECTOR_SW_BASE+1));
+
     printf("%x\n", gpio_get_all());
 #ifdef SW_COMM_LOW                                          // sw pulls gpio pins low, so invert sw result
     return ((~gpio_get_all()) & sw_mask) >> SELECTOR_SW_BASE;
