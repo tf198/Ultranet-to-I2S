@@ -36,6 +36,8 @@ static const uint32_t SYNC_B = 0b1111;
 static const uint32_t SYNC_M = 0b1011;
 static const uint32_t SYNC_W = 0b0111;
 
+volatile UltranetStats ultranet_stats;
+
 struct UltranetStream* ultranet_init(PIO pio) {
   struct UltranetStream *result = malloc(sizeof(struct UltranetStream));
   memset(result, 0, sizeof(struct UltranetStream));
@@ -47,7 +49,7 @@ struct UltranetStream* ultranet_init(PIO pio) {
 }
 
 // state machine init functions (used to be defined in <prog>.pio file)
-void ultranet_sm_init(volatile struct UltranetStream *stream, uint pin)
+void ultranet_sm_init(struct UltranetStream *stream, uint pin)
 {
     uint sm = stream->sm0 + stream->sm_count;
     gpio_init(pin);
@@ -111,29 +113,29 @@ int8_t sample_channel(uint32_t sample) {
     }
 }
 
-void reset_stats(volatile struct UltranetStream *stream) {
-    memset((void*)stream->received, 0, 16*sizeof(uint32_t));
-    memset((void*)stream->errors  , 0, 5*sizeof(uint32_t));
-    stream->start_ts = time_us_64();
+void reset_stats() {
+    memset((void*)ultranet_stats.received, 0, 16*sizeof(uint32_t));
+    memset((void*)ultranet_stats.errors  , 0, 5*sizeof(uint32_t));
+    ultranet_stats.start_ts = time_us_64();
 }
 
-void ultranet_generate_stats(struct UltranetStream *stream) {
+void ultranet_generate_stats() {
     char buffer[100];
 
-    sprintf(stream->status, "|");
+    sprintf(ultranet_stats.status, "|");
     for (int i=0; i<16; i++) {
-        sprintf(buffer, " %-3d", 48000-stream->received[i]);
-        strcat(stream->status, buffer);
+        sprintf(buffer, " %-3d", 48000-ultranet_stats.received[i]);
+        strcat(ultranet_stats.status, buffer);
     }
     //sprintf(&ultranet_status[70], " | ");
-    strcat(stream->status, " |");
+    strcat(ultranet_stats.status, " |");
     for (int i=1; i<5; i++) {
-        sprintf(buffer, " %2d: %-3lu", i*-1, stream->errors[i]);
-        strcat(stream->status, buffer);
+        sprintf(buffer, " %2d: %-3lu", i*-1, ultranet_stats.errors[i]);
+        strcat(ultranet_stats.status, buffer);
     }
-    sprintf(buffer, "| %5.3f%% | %4dns |", stream->errors[0]*100.0/384000, time_us_64()-stream->start_ts-1000000);
-    strcat(stream->status, buffer);
-    reset_stats(stream);
+    sprintf(buffer, "| %5.3f%% | %4dns |", ultranet_stats.errors[0]*100.0/384000, time_us_64()-ultranet_stats.start_ts-1000000);
+    strcat(ultranet_stats.status, buffer);
+    reset_stats(ultranet_stats);
 }
 
 void print_sample(uint32_t sample) {
@@ -165,14 +167,14 @@ void ultranet_dump_samples(int count, struct UltranetStream *stream) {
 
 
 
-void ultranet_decode_forever(volatile struct UltranetStream *stream, volatile int32_t *samples)
+void ultranet_decode_forever(struct UltranetStream *stream, volatile int32_t *samples)
 {
     uint32_t sample;                               // temp store for sample read from Ultranet stream
     int8_t channel;
 
     uint32_t samples_received = 0;
 
-    reset_stats(stream);
+    reset_stats();
 
     while (true)
     {
@@ -181,22 +183,22 @@ void ultranet_decode_forever(volatile struct UltranetStream *stream, volatile in
         channel = sample_channel(sample);
         samples_received++;
         if (channel < 0) {
-            stream->errors[0]++;
-            stream->errors[channel*-1]++;
+            ultranet_stats.errors[0]++;
+            ultranet_stats.errors[channel*-1]++;
         } else {
             // move 22 bits of audio into MSBs
-            stream->received[channel]++;
+            ultranet_stats.received[channel]++;
             samples[channel] = (int32_t)((sample << 4) & 0xFFFFFC00);
         }
 
         if(samples_received == 384000) {
-            ultranet_generate_stats((struct UltranetStream*)stream);
+            ultranet_generate_stats();
             samples_received = 0;
         }
     }
 }
 
-void ultranet_decode_and_mix(volatile struct UltranetStream *stream, volatile int32_t *samples, volatile float mixes[][16]) {
+void ultranet_decode_and_mix(struct UltranetStream *stream, volatile int32_t *samples, volatile float mixes[][16]) {
 
     uint32_t sample;                               // temp store for sample read from Ultranet stream
     int8_t channel;
@@ -208,7 +210,8 @@ void ultranet_decode_and_mix(volatile struct UltranetStream *stream, volatile in
     int64_t buses[4];
     memset(buses, 0, 4*sizeof(int64_t));
 
-    reset_stats(stream);
+    reset_stats();
+    ultranet_generate_stats();
 
     while (true)
     {
@@ -223,11 +226,11 @@ void ultranet_decode_and_mix(volatile struct UltranetStream *stream, volatile in
             channel = sample_channel(sample);
             samples_received++;
             if (channel < 0) {
-                stream->errors[0]++;
-                stream->errors[channel*-1]++;
+                ultranet_stats.errors[0]++;
+                ultranet_stats.errors[channel*-1]++;
             } else {
                 channel += (8*sm);
-                stream->received[channel]++;
+                ultranet_stats.received[channel]++;
                 // move 22 bits of audio into MSBs
                 audio = (int32_t)((sample << 4) & 0xFFFFFC00);
                 //samples[channel] = (int32_t)(audio * mixes[0][channel]);
@@ -249,7 +252,7 @@ void ultranet_decode_and_mix(volatile struct UltranetStream *stream, volatile in
         }
 
         if(samples_received >= 768000) {
-            ultranet_generate_stats((struct UltranetStream*)stream);
+            ultranet_generate_stats();
             samples_received = 0;
         }
     }

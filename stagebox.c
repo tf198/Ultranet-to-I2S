@@ -31,7 +31,7 @@
 //#define I2S3_PINS 12                 // base for I2S output pins (3 pins starting point)
 //#define I2S4_PINS 15                // base for I2S output pins (3 pins starting point)
 
-volatile struct UltranetStream *stream; // __attribute__((aligned(2*sizeof(int32_t))));
+UltranetStream *stream; // __attribute__((aligned(2*sizeof(int32_t))));
 volatile int32_t samples[16] __attribute__((aligned(2*sizeof(int32_t))));
 
 // Embedded binary information (for picotool interrogation of programmed device)
@@ -168,7 +168,7 @@ int main()
         sleep_ms(250);
         gpio_put(LED_ORANGE, false);
         #ifdef LOGGING
-        puts((char*)stream->status);
+        puts((char*)ultranet_stats.status);
         #endif
     }
 
